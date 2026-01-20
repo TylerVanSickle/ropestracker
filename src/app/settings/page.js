@@ -114,7 +114,7 @@ export default function SettingsPage() {
                 onChange={(e) => updateDuration(e.target.value)}
               />
               <p className="muted helper">
-                Default is 45 — change it if ops changes the time.
+                Default is 45. Change it if operators want the times changed.
               </p>
             </label>
           </div>

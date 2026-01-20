@@ -125,7 +125,7 @@ export default function WaitlingList({
                       ↓
                     </button>
                   </div>
-
+                  {/* THIS NOTIFY BUTTON WILL BECOME A BUTTON TO AUTOMATICALLY NOTIFY/TEXT THE GUESTS */}
                   {isFront && canStart ? (
                     <button
                       className="button"
