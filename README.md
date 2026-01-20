@@ -1,94 +1,88 @@
 # Ropes Tracker
 
-A simple, real-time waitlist and capacity management app designed for **drop-in ropes courses**.
+Ropes Tracker is an internal web application built specifically to support **daily operations at our ropes course**.
 
-Ropes Tracker helps front desk and floor staff manage guest flow, track course capacity, and communicate accurate wait times — without guessing or manual tracking.
-
----
-
-## Overview
-
-Ropes Tracker is built for attractions with limited capacity (such as sling lines) and continuous walk-up guests.
-
-It provides a clear view of:
-- Who is currently on the course
-- Who is next in line
-- How long the wait is for different group sizes
-- When the next group can safely be sent
-
-The goal is **clarity, speed, and ease of use** for both staff and guests.
+It is designed to help front desk and floor staff manage guest flow, sling line capacity, and wait times in a clear and consistent way during normal drop-in operations.
 
 ---
 
-## Key Features
+## Purpose
 
-- **Live Waitlist Management**
-  - Add guest groups with name, party size, phone, and notes
-  - Track groups as *Waiting*, *On Course*, or *Done*
-  - Edit group details at any time
+The goal of Ropes Tracker is to:
+- Reduce guesswork around wait times
+- Improve communication between staff and guests
+- Keep the course running efficiently during busy periods
+- Provide a single, clear source of truth for who is on course and who is waiting
 
-- **Capacity-Aware Queue**
-  - Uses a fixed number of sling lines (configurable)
-  - Group size directly maps to lines used
-  - Enforces strict first-in-line order (no skipping)
+This tool reflects how our course actually operates and is being built around real, on-site workflows.
 
-- **Automatic Wait Time Estimates**
-  - Calculates realistic estimated start times
-  - Displays guest-friendly wait ranges (ex: `20–30 min`)
-  - Updates automatically as the course fills or clears
+---
 
-- **“Call Now” Logic**
-  - Clearly indicates when the next group can start
-  - Only triggers when enough capacity is available
-  - Optional call / text helpers for guest notification
+## How It Works
 
-- **Staff-Friendly Design**
-  - Clear, human-readable language
-  - Built for fast scanning during busy operations
-  - No technical jargon shown to guests
+- The course has a fixed number of sling lines (configurable in settings).
+- Each guest uses one sling line.
+- A group’s size determines how many sling lines they require.
+- Groups are added to a waitlist and are sent in **strict order**.
+- A group can only start when enough sling lines are available.
+- Each group stays on the course for a fixed duration (configurable).
+
+This ensures fairness, safety, and predictable flow.
+
+---
+
+## Current Features
+
+### Waitlist Management
+- Add guest groups with:
+  - Group name
+  - Party size
+  - Phone number (optional)
+  - Internal notes
+- Track group status:
+  - Waiting
+  - On Course
+  - Done / No-show
+- Edit group details as needed during operations
+- Manually reorder the waitlist when required by staff
+
+### Capacity & Timing
+- Live tracking of sling line usage
+- Automatic release of lines when groups finish
+- Realistic wait time estimates based on current activity
+- Clear indication when the next group can be sent
+
+### Staff Communication
+- “Call Now” indicator for the next eligible group
+- Optional call / text helpers for contacting guests
+- Simple, readable interface designed for fast decision-making
 
 ---
 
 ## Public Display Mode (In Progress)
 
-A read-only **TV / monitor view** designed for guests waiting nearby:
-- Shows *Now On Course* and *Next Up*
-- Displays estimated waits for common group sizes
-- Hides internal details (capacity counts, notes, phone numbers)
+A read-only screen intended for display on a monitor or TV near the course:
+- Shows who is currently on the course
+- Displays which group is next
+- Provides estimated wait times for common group sizes
+- Hides internal-only information (notes, phone numbers, sling line counts)
 
-This reduces repeated questions and improves guest confidence.
-
----
-
-## Tech Stack
-
-- **Framework:** Next.js (App Router)
-- **State:** Client-side with `localStorage`
-- **UI:** Custom CSS (no UI framework)
-- **Architecture:** Modular React components
-
-No backend or database is required at this stage, keeping the system lightweight and easy to deploy.
+This is intended to reduce repeated guest questions and improve transparency.
 
 ---
 
-## Use Case
+## Technical Notes
 
-Designed specifically for:
-- Drop-in ropes courses
-- Front desk + floor staff operations
-- High guest turnover with limited capacity
+- Built with Next.js (App Router)
+- Uses client-side storage (`localStorage`)
+- No backend or database required at this stage
+- Modular React components for maintainability
+- Custom CSS tailored to on-site usage
 
 ---
 
 ## Status
 
-This project is actively developed and tested in a **real ropes course environment** and is evolving based on staff feedback and daily operations.
+Ropes Tracker is actively under development and testing and is being refined based on real usage by staff at the course.
 
----
-
-## Future Enhancements
-
-- Daily usage stats and reporting
-- QR code guest check-in
-- Optional database backend
-- Staff roles (view vs edit)
+The system will continue to evolve as operational needs change.
