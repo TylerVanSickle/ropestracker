@@ -62,8 +62,8 @@ This ensures fairness, safety, and predictable flow.
 ## Public Display Mode (In Progress)
 
 A read-only screen intended for display on a monitor or TV near the course:
-- Shows who is currently on the course
-- Displays which group is next
+- Shows who is currently on the course (Maybe)
+- Displays which group is next + Wait times for 1-3 other groups if waiting.
 - Provides estimated wait times for common group sizes
 - Hides internal-only information (notes, phone numbers, sling line counts)
 
