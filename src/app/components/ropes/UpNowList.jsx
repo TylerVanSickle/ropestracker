@@ -10,6 +10,14 @@ function formatPhoneForTel(phone) {
   return isPlus ? `+${digits}` : digits;
 }
 
+function getPhaseLabel(e) {
+  const raw = String(e?.coursePhase || "").toUpperCase();
+  if (raw === "SENT") return "COMING UP";
+  if (raw === "ON_COURSE") return "ON COURSE";
+  // if older entries don't have coursePhase, treat as on course
+  return "ON COURSE";
+}
+
 export default function UpNowList({
   active = [],
   now = new Date(),
@@ -36,11 +44,17 @@ export default function UpNowList({
             const mins = secsLeft !== null ? Math.floor(secsLeft / 60) : null;
             const secs = secsLeft !== null ? secsLeft % 60 : null;
 
+            const phaseLabel = getPhaseLabel(e);
+
             return (
               <div key={e.id} className="item">
                 <div className="item-main">
                   <div className="item-title">
-                    {e.name} <span className="pill">{e.linesUsed} lines</span>
+                    {e.name} <span className="pill">{e.linesUsed} lines</span>{" "}
+                    <span className="pill">{phaseLabel}</span>
+                    {e.assignedTag ? (
+                      <span className="pill">{e.assignedTag}</span>
+                    ) : null}
                   </div>
 
                   <div className="muted item-sub">
@@ -93,6 +107,7 @@ export default function UpNowList({
                     className="button button-primary"
                     onClick={() => onComplete(e.id)}
                     type="button"
+                    title="Marks group done"
                   >
                     Complete
                   </button>

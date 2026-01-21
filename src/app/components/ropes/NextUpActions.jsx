@@ -6,7 +6,7 @@ export default function NextUpActions({
   nextWaitRange,
   canStartNow,
   onNotify,
-  onStart,
+  onStart, // now means "Send Up"
   onEdit,
   onNoShow,
   onRemove,
@@ -19,7 +19,8 @@ export default function NextUpActions({
             Next Up (Quick Actions)
           </h2>
           <p className="muted helper">
-            One-tap actions for the next group to keep the desk moving.
+            One-tap actions for the next group. <strong>Send Up</strong>{" "}
+            reserves lines but does not start the ropes timer (Top does that).
           </p>
         </div>
       </div>
@@ -47,18 +48,27 @@ export default function NextUpActions({
                 type="button"
                 onClick={onStart}
                 disabled={!canStartNow}
+                title={
+                  canStartNow
+                    ? "Send this group up (reserves sling lines)"
+                    : "Will enable once enough lines are available"
+                }
               >
-                Start
+                Send Up
               </button>
+
               <button className="button" type="button" onClick={onNotify}>
                 Notify
               </button>
+
               <button className="button" type="button" onClick={onEdit}>
                 Edit
               </button>
+
               <button className="button" type="button" onClick={onNoShow}>
                 No-show
               </button>
+
               <button className="button" type="button" onClick={onRemove}>
                 Remove
               </button>
@@ -67,7 +77,8 @@ export default function NextUpActions({
 
           {!canStartNow ? (
             <p className="muted helper spacer-sm">
-              Start will enable automatically once enough lines are available.
+              <strong>Send Up</strong> will enable automatically once enough
+              lines are available.
             </p>
           ) : null}
         </>

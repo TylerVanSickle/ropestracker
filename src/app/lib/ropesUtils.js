@@ -245,3 +245,9 @@ export function estimateForNewGroupSize({
     estEndISO: r.estEndISO,
   };
 }
+export function minutesLeft(endTimeISO) {
+  if (!endTimeISO) return null;
+  const t = new Date(endTimeISO);
+  if (Number.isNaN(t.getTime())) return null;
+  return Math.ceil((t.getTime() - Date.now()) / 60000);
+}

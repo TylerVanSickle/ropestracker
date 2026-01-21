@@ -11,7 +11,7 @@ export default function WaitlingList({
   onMoveUp,
   onMoveDown,
   onNotify,
-  onStart,
+  onStart, // now means "Send Up" (reserve lines + mark coming up)
   onNoShow,
   onRemove,
 }) {
@@ -36,7 +36,9 @@ export default function WaitlingList({
           waiting.map((e, idx) => {
             const needs = Math.max(1, Number(e.partySize || 1));
             const isFront = idx === 0;
-            const canStart = isFront && availableLines >= needs;
+
+            // "Send Up" still reserves lines, so must have space
+            const canSendUp = isFront && availableLines >= needs;
 
             const reason = !isFront
               ? "Can’t skip the line"
@@ -75,7 +77,7 @@ export default function WaitlingList({
                     </div>
                   </div>
 
-                  {isFront && !canStart ? (
+                  {isFront && !canSendUp ? (
                     <div className="muted item-sub">{reason}</div>
                   ) : null}
 
@@ -125,8 +127,9 @@ export default function WaitlingList({
                       ↓
                     </button>
                   </div>
-                  {/* THIS NOTIFY BUTTON WILL BECOME A BUTTON TO AUTOMATICALLY NOTIFY/TEXT THE GUESTS */}
-                  {isFront && canStart ? (
+
+                  {/* Notify stays gated by "can send up" (same behavior as before) */}
+                  {isFront && canSendUp ? (
                     <button
                       className="button"
                       onClick={() => onNotify(e)}
@@ -139,11 +142,13 @@ export default function WaitlingList({
                   <button
                     className="button button-primary"
                     onClick={() => onStart(e.id)}
-                    disabled={!canStart}
-                    title={!canStart ? reason : "Start this group"}
+                    disabled={!canSendUp}
+                    title={
+                      !canSendUp ? reason : "Send this group up (reserve lines)"
+                    }
                     type="button"
                   >
-                    Start
+                    Send Up
                   </button>
 
                   <button

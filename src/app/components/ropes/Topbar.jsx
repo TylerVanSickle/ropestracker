@@ -44,7 +44,6 @@ export default function Topbar({
           {/* <button className="button" type="button" onClick={onArchiveToday}>
             Archive Today
           </button> */}
-
           <button
             className="button"
             type="button"
@@ -54,14 +53,15 @@ export default function Topbar({
           >
             Undo
           </button>
-
-          <Link className="button" href="/settings">
-            Settings
+          <Link className="button" href="/top">
+            Top
           </Link>
-
           <button className="button" onClick={onClearAll} type="button">
             Clear list
           </button>
+          <Link className="button" href="/settings">
+            Settings
+          </Link>
         </div>
       </div>
     </div>

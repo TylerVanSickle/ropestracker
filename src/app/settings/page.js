@@ -24,6 +24,11 @@ export default function SettingsPage() {
       Math.min(180, Number(settings.durationMin ?? 45)),
     );
 
+    const topDurationMin = Math.max(
+      5,
+      Math.min(180, Number(settings.topDurationMin ?? 35)),
+    );
+
     const paused = Boolean(settings.paused ?? false);
 
     const venueName = String(settings.venueName ?? "Ropes Course Waitlist")
@@ -43,6 +48,7 @@ export default function SettingsPage() {
     return {
       totalLines,
       durationMin,
+      topDurationMin,
       paused,
       venueName,
       clientTheme,
@@ -51,6 +57,7 @@ export default function SettingsPage() {
   }, [
     settings.totalLines,
     settings.durationMin,
+    settings.topDurationMin,
     settings.paused,
     settings.venueName,
     settings.clientTheme,
@@ -73,6 +80,14 @@ export default function SettingsPage() {
     setSavedMsg("");
   }
 
+  function updateTopDuration(value) {
+    setSettings((s) => ({
+      ...s,
+      topDurationMin: Math.max(5, Math.min(180, Number(value || 0))),
+    }));
+    setSavedMsg("");
+  }
+
   function updateClosed(value) {
     setSettings((s) => ({ ...s, paused: Boolean(value) }));
     setSavedMsg("");
@@ -89,7 +104,6 @@ export default function SettingsPage() {
   }
 
   function updateStaffPin(value) {
-    // allow digits, letters, dash, underscore
     const safe = String(value ?? "")
       .replace(/[^\w-]/g, "")
       .slice(0, 12);
@@ -107,6 +121,7 @@ export default function SettingsPage() {
     const defaults = {
       totalLines: MAX_SLING_LINES,
       durationMin: 45,
+      topDurationMin: 35,
       paused: false,
       venueName: "Ropes Course Waitlist",
       clientTheme: "auto",
@@ -170,7 +185,7 @@ export default function SettingsPage() {
               placeholder="Ropes Course Waitlist"
             />
             <p className="muted helper">
-              This appears on the public-facing screen. Keep it short.
+              This appears on the public facing screen. Keep it short.
             </p>
           </label>
 
@@ -273,7 +288,9 @@ export default function SettingsPage() {
             </label>
 
             <label className="field">
-              <span className="field-label">Session duration (minutes)</span>
+              <span className="field-label">
+                Desk “Send Up” duration (minutes)
+              </span>
               <input
                 className="input"
                 type="number"
@@ -283,7 +300,27 @@ export default function SettingsPage() {
                 onChange={(e) => updateDuration(e.target.value)}
               />
               <p className="muted helper">
-                Default is 45. Change it if operators want the times changed.
+                This is the default time used when the desk sends a group up.
+              </p>
+            </label>
+          </div>
+
+          <div className="form-row form-row-2">
+            <label className="field">
+              <span className="field-label">
+                Top Ropes “Start Course” timer (minutes)
+              </span>
+              <input
+                className="input"
+                type="number"
+                min={5}
+                max={180}
+                value={settings.topDurationMin ?? 35}
+                onChange={(e) => updateTopDuration(e.target.value)}
+              />
+              <p className="muted helper">
+                This is the timer that starts when the operator presses{" "}
+                <strong>Start Course</strong> on /top.
               </p>
             </label>
           </div>
@@ -294,8 +331,12 @@ export default function SettingsPage() {
               <strong>{clamped.totalLines}</strong>
             </div>
             <div>
-              <span className="muted">Current duration:</span>{" "}
+              <span className="muted">Desk duration:</span>{" "}
               <strong>{clamped.durationMin} min</strong>
+            </div>
+            <div>
+              <span className="muted">Top timer:</span>{" "}
+              <strong>{clamped.topDurationMin} min</strong>
             </div>
             <div>
               <span className="muted">Public status:</span>{" "}

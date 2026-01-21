@@ -279,6 +279,9 @@ export default function Home() {
   }
 
   function startGroup(id) {
+    // startGroup is now "Send Up" (reserve lines + show on /top as Coming Up Now)
+    const HOLD_MIN = 5;
+
     setEntries((prev) => {
       pushUndoSnapshot(prev);
 
@@ -290,7 +293,7 @@ export default function Home() {
 
       const front = waitingPrev[0];
       if (front.id !== id) {
-        alert("You can’t skip the line. Only the next group can start.");
+        alert("You can’t skip the line. Only the next group can be sent up.");
         return prev;
       }
 
@@ -317,14 +320,20 @@ export default function Home() {
         return prev;
       }
 
+      const nowISO = new Date().toISOString();
+
       return prev.map((e) => {
         if (e.id !== id) return e;
         return {
           ...e,
           status: "UP",
-          linesUsed: linesNeeded,
-          startedAt: new Date().toISOString(),
-          endTime: minutesFromNow(settings.durationMin),
+          linesUsed: linesNeeded, // IMPORTANT for staff math
+          startedAt: nowISO, // ok to set (means "sent up at" for now)
+          sentUpAt: nowISO, // NEW field used by /top
+          coursePhase: "SENT", // NEW field used by /top
+
+          // SHORT HOLD so computeEstimates stays accurate while they’re walking up
+          endTime: minutesFromNow(HOLD_MIN),
         };
       });
     });

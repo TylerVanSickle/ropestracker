@@ -14,6 +14,8 @@ export const LS_KEY_ARCHIVE_PREFIX = "ropes_archive_";
 const DEFAULT_SETTINGS = {
   totalLines: 15,
   durationMin: 45,
+  topDurationMin: 35, // timer when top operator starts the course
+  stagingDurationMin: 5, // optional: how long they have to arrive (or omit)
   paused: false, // "closed" on client
   venueName: "Ropes Course Waitlist",
   clientTheme: "auto", // "auto" | "light" | "dark"
@@ -318,4 +320,170 @@ export function formatTime(value) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+// ===== Top Ropes extensions (local-only, backward compatible) =====
+
+export function normalizeEntry(e) {
+  if (!e || typeof e !== "object") return e;
+
+  const status = String(e.status || "").toUpperCase();
+  const partyLines = Math.max(1, Number(e.partySize || 1));
+
+  return {
+    ...e,
+    assignedTag: e.assignedTag ?? null,
+    endedEarlyAt: e.endedEarlyAt ?? null,
+    timeAdjustMin: Number.isFinite(Number(e.timeAdjustMin))
+      ? Number(e.timeAdjustMin)
+      : 0,
+
+    // ✅ safety net: if it's UP but missing linesUsed, infer from partySize
+    ...(status === "UP" && !Number.isFinite(Number(e.linesUsed))
+      ? { linesUsed: partyLines }
+      : {}),
+  };
+}
+
+export function normalizeEntries(list) {
+  const arr = Array.isArray(list) ? list : [];
+  let changed = false;
+  const next = arr.map((e) => {
+    const ne = normalizeEntry(e);
+    // Detect if we added defaults
+    if (
+      (e?.assignedTag ?? null) !== ne.assignedTag ||
+      (e?.endedEarlyAt ?? null) !== ne.endedEarlyAt ||
+      Number(e?.timeAdjustMin ?? 0) !== ne.timeAdjustMin
+    ) {
+      changed = true;
+    }
+    return ne;
+  });
+  return { entries: next, changed };
+}
+
+export function patchEntry(entryId, patch) {
+  const entries = loadEntries();
+  const { entries: normalized, changed } = normalizeEntries(entries);
+
+  const next = normalized.map((e) =>
+    e.id === entryId ? { ...e, ...patch } : e,
+  );
+
+  // If normalization changed anything, we still want to persist
+  if (changed || next !== normalized) saveEntries(next);
+  else saveEntries(next);
+
+  return next;
+}
+
+export function setEntryStatus(entryId, status) {
+  return patchEntry(entryId, { status: String(status || "").toUpperCase() });
+}
+
+export function startEntry(entryId, durationMin) {
+  const now = Date.now();
+  const dur = Math.max(5, Number(durationMin || 45));
+  const startedAtISO = new Date(now).toISOString();
+  const endTimeISO = new Date(now + dur * 60 * 1000).toISOString();
+
+  const entries = loadEntries();
+  const { entries: normalized } = normalizeEntries(entries);
+
+  const next = normalized.map((e) => {
+    if (e.id !== entryId) return e;
+
+    const linesNeeded = Math.max(1, Number(e.partySize || 1));
+
+    return {
+      ...e,
+      status: "UP",
+      // ✅ IMPORTANT: staff page depends on this for occupiedLines
+      linesUsed: linesNeeded,
+
+      // ✅ staff page uses startedAt
+      startedAt: startedAtISO,
+
+      // optional: keep for /top display or future use
+      startTime: startedAtISO,
+
+      endTime: endTimeISO,
+    };
+  });
+
+  saveEntries(next);
+  return next;
+}
+
+export function extendEntryByMinutes(entryId, addMin) {
+  const add = Number(addMin || 0);
+  if (!Number.isFinite(add) || add <= 0) return loadEntries();
+
+  const entries = loadEntries();
+  const { entries: normalized } = normalizeEntries(entries);
+
+  const next = normalized.map((e) => {
+    if (e.id !== entryId) return e;
+
+    const currentEnd = e.endTime ? new Date(e.endTime) : null;
+    if (!currentEnd || Number.isNaN(currentEnd.getTime())) return e;
+
+    const newEnd = new Date(
+      currentEnd.getTime() + add * 60 * 1000,
+    ).toISOString();
+    return {
+      ...e,
+      endTime: newEnd,
+      timeAdjustMin: (Number(e.timeAdjustMin || 0) || 0) + add,
+    };
+  });
+
+  saveEntries(next);
+  return next;
+}
+
+export function endEntryEarly(entryId) {
+  return patchEntry(entryId, {
+    status: "DONE",
+    endedEarlyAt: new Date().toISOString(),
+  });
+}
+
+export function markEntryDone(entryId) {
+  return patchEntry(entryId, { status: "DONE" });
+}
+export function sendUpEntry(entryId) {
+  const nextEntries = patchEntry(entryId, {
+    status: "STAGING",
+    sentUpAt: new Date().toISOString(),
+  });
+  return nextEntries;
+}
+
+export function startTopCourse(entryId, topDurationMin) {
+  const now = Date.now();
+  const dur = Math.max(5, Number(topDurationMin || 35));
+  const startedAtISO = new Date(now).toISOString();
+  const endTimeISO = new Date(now + dur * 60 * 1000).toISOString();
+
+  const entries = loadEntries();
+  const { entries: normalized } = normalizeEntries(entries);
+
+  const next = normalized.map((e) => {
+    if (e.id !== entryId) return e;
+
+    const linesNeeded = Math.max(1, Number(e.partySize || 1));
+
+    return {
+      ...e,
+      status: "UP",
+      linesUsed: linesNeeded,
+      startedAt: startedAtISO,
+      startTime: startedAtISO,
+      endTime: endTimeISO,
+    };
+  });
+
+  saveEntries(next);
+  return next;
 }
