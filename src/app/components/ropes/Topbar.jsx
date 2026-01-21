@@ -8,6 +8,11 @@ export default function Topbar({
   availableLines,
   totalLines,
   onClearAll,
+  onUndo,
+  canUndo,
+  onArchiveToday,
+  onOpenClient,
+  onOpenPrint,
 }) {
   return (
     <div className="card">
@@ -29,9 +34,31 @@ export default function Topbar({
         </div>
 
         <div className="row">
+          <button className="button" type="button" onClick={onOpenClient}>
+            Client
+          </button>
+          <button className="button" type="button" onClick={onOpenPrint}>
+            Print
+          </button>
+
+          <button className="button" type="button" onClick={onArchiveToday}>
+            Archive Today
+          </button>
+
+          <button
+            className="button"
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            title={!canUndo ? "Nothing to undo" : "Undo last action"}
+          >
+            Undo
+          </button>
+
           <Link className="button" href="/settings">
             Settings
           </Link>
+
           <button className="button" onClick={onClearAll} type="button">
             Clear list
           </button>

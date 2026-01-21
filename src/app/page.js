@@ -6,6 +6,12 @@ import {
   loadSettings,
   saveEntries,
   uid,
+  subscribeToRopesStorage,
+  loadUndoStack,
+  saveUndoStack,
+  archiveToday,
+  loadStaffAuthedAt,
+  setStaffAuthedNow,
 } from "@/app/lib/ropesStore";
 
 import Topbar from "@/app/components/ropes/Topbar";
@@ -15,6 +21,7 @@ import AddGuestForm from "@/app/components/ropes/AddGuestForm";
 import UpNowList from "@/app/components/ropes/UpNowList";
 import WaitlingList from "@/app/components/ropes/WaitingList";
 import EditEntryModal from "@/app/components/ropes/EditEntryModal";
+import NextUpActions from "@/app/components/ropes/NextUpActions";
 
 import {
   buildSmsHref,
@@ -25,10 +32,32 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
+function isPinValid(input, pin) {
+  const a = String(input ?? "").trim();
+  const b = String(pin ?? "").trim();
+  return !!b && a === b;
+}
+
 export default function Home() {
-  const [settings] = useState(() => loadSettings());
+  // IMPORTANT: settings should update when changed in /settings
+  const [settings, setSettings] = useState(() => loadSettings());
+
   const [entries, setEntries] = useState(() => ensureQueueOrder(loadEntries()));
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState(() => new Date());
+
+  // Undo stack persisted
+  const [undoStack, setUndoStack] = useState(() => loadUndoStack());
+
+  // PIN gate
+  const [authed, setAuthed] = useState(() => {
+    const s = loadSettings();
+    const pin = String(s.staffPin || "").trim();
+    if (!pin) return true; // no pin set
+    const at = loadStaffAuthedAt();
+    // keep it simple: if authed at exists, we’re in
+    return !!at;
+  });
+  const [pinInput, setPinInput] = useState("");
 
   const [newGuest, setNewGuest] = useState({
     name: "",
@@ -37,11 +66,21 @@ export default function Home() {
     notes: "",
   });
 
-  // quote input: store as string (fixes typing bug)
   const [quoteSizeInput, setQuoteSizeInput] = useState("1");
-
-  // edit modal
   const [editingId, setEditingId] = useState(null);
+
+  // keep settings + entries synced across tabs
+  const refreshFromStorage = () => {
+    setSettings(loadSettings());
+    setEntries(ensureQueueOrder(loadEntries()));
+    setUndoStack(loadUndoStack());
+  };
+
+  useEffect(() => {
+    const unsub = subscribeToRopesStorage(refreshFromStorage);
+    return () => unsub?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // tick + auto-complete expired runs inside interval callback
   useEffect(() => {
@@ -73,10 +112,35 @@ export default function Home() {
     return () => clearInterval(t);
   }, []);
 
-  // persist
+  // persist entries (but DO NOT push undo here)
   useEffect(() => {
     saveEntries(entries);
   }, [entries]);
+
+  // push undo snapshot before user actions
+  function pushUndoSnapshot(prevEntries) {
+    const snap = {
+      at: new Date().toISOString(),
+      entries: Array.isArray(prevEntries) ? prevEntries : [],
+    };
+    setUndoStack((prev) => {
+      const next = [snap, ...(Array.isArray(prev) ? prev : [])].slice(0, 20);
+      saveUndoStack(next);
+      return next;
+    });
+  }
+
+  function undoLast() {
+    setUndoStack((prev) => {
+      if (!prev || prev.length === 0) return prev;
+      const [top, ...rest] = prev;
+      if (top?.entries) {
+        setEntries(ensureQueueOrder(top.entries));
+      }
+      saveUndoStack(rest);
+      return rest;
+    });
+  }
 
   // derived lists
   const waiting = useMemo(() => {
@@ -110,7 +174,6 @@ export default function Home() {
     });
   }, [settings.totalLines, settings.durationMin, active, waiting, now]);
 
-  // next-up estimate strings
   const nextEst = nextWaiting ? estimateMap.get(nextWaiting.id) : null;
   const nextEstStartText = nextEst?.estStartISO
     ? new Date(nextEst.estStartISO).toLocaleTimeString([], {
@@ -121,7 +184,6 @@ export default function Home() {
   const nextWaitRange =
     nextEst?.estWaitMin != null ? getWaitRangeText(nextEst.estWaitMin) : "—";
 
-  // quote calc
   const quoteSize = useMemo(() => {
     const n = Number(quoteSizeInput);
     if (!Number.isFinite(n)) return 1;
@@ -196,8 +258,9 @@ export default function Home() {
     const partySize = Math.max(1, Number(newGuest.partySize || 1));
     const phone = newGuest.phone.trim();
 
-    setEntries((prev) =>
-      ensureQueueOrder([
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return ensureQueueOrder([
         ...prev,
         {
           id: uid(),
@@ -209,14 +272,16 @@ export default function Home() {
           createdAt: new Date().toISOString(),
           queueOrder: Date.now() + Math.random(),
         },
-      ]),
-    );
+      ]);
+    });
 
     setNewGuest({ name: "", phone: "", partySize: 1, notes: "" });
   }
 
   function startGroup(id) {
     setEntries((prev) => {
+      pushUndoSnapshot(prev);
+
       const waitingPrev = prev
         .filter((e) => e.status === "WAITING")
         .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
@@ -266,29 +331,38 @@ export default function Home() {
   }
 
   function completeGroup(id) {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: "DONE" } : e)),
-    );
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return prev.map((e) => (e.id === id ? { ...e, status: "DONE" } : e));
+    });
   }
 
   function noShow(id) {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status: "NOSHOW" } : e)),
-    );
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return prev.map((e) => (e.id === id ? { ...e, status: "NOSHOW" } : e));
+    });
   }
 
   function remove(id) {
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return prev.filter((e) => e.id !== id);
+    });
   }
 
   function clearAll() {
     if (!confirm("Clear the entire waitlist + active runs?")) return;
-    setEntries([]);
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return [];
+    });
   }
 
-  // reorder waiting: swap queueOrder with neighbor
   function moveWaiting(id, direction) {
     setEntries((prev) => {
+      pushUndoSnapshot(prev);
+
       const waitingPrev = prev
         .filter((e) => e.status === "WAITING")
         .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
@@ -319,8 +393,82 @@ export default function Home() {
   }, [editingId, entries]);
 
   function saveEdit(updated) {
-    setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    setEntries((prev) => {
+      pushUndoSnapshot(prev);
+      return prev.map((e) => (e.id === updated.id ? updated : e));
+    });
     setEditingId(null);
+  }
+
+  function doArchiveToday() {
+    const key = archiveToday({ entries, settings });
+    alert(key ? "Archived ✅" : "Could not archive.");
+  }
+
+  function openClient() {
+    window.open("/client", "_blank", "noopener,noreferrer");
+  }
+
+  function openPrint() {
+    window.open("/print", "_blank", "noopener,noreferrer");
+  }
+
+  // PIN gate UI (if enabled)
+  const staffPin = String(settings.staffPin || "").trim();
+  const requiresPin = !!staffPin;
+
+  function submitPin(e) {
+    e.preventDefault();
+    if (!requiresPin) {
+      setAuthed(true);
+      return;
+    }
+
+    if (isPinValid(pinInput, staffPin)) {
+      setStaffAuthedNow();
+      setAuthed(true);
+      setPinInput("");
+      return;
+    }
+
+    alert("Wrong PIN.");
+    setPinInput("");
+    // send them to public display if they can’t access staff tools
+    window.location.href = "/client";
+  }
+
+  if (requiresPin && !authed) {
+    return (
+      <main className="container">
+        <div className="card spacer-md">
+          <h1 className="title">Staff Access</h1>
+          <p className="muted helper">
+            Enter the staff PIN to access the waitlist tools.
+          </p>
+
+          <form className="guest-form spacer-sm" onSubmit={submitPin}>
+            <label className="field">
+              <span className="field-label">Staff PIN</span>
+              <input
+                className="input"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                autoFocus
+                autoComplete="off"
+              />
+            </label>
+
+            <button className="button button-primary button-wide" type="submit">
+              Unlock
+            </button>
+
+            <p className="muted helper">
+              No PIN? Open the public screen instead: <strong>/client</strong>
+            </p>
+          </form>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -330,8 +478,26 @@ export default function Home() {
         availableLines={availableLines}
         totalLines={settings.totalLines}
         onClearAll={clearAll}
+        onUndo={undoLast}
+        canUndo={undoStack.length > 0}
+        onArchiveToday={doArchiveToday}
+        onOpenClient={openClient}
+        onOpenPrint={openPrint}
       />
 
+      <NextUpActions
+        nextWaiting={nextWaiting}
+        nextEstStartText={nextEstStartText}
+        nextWaitRange={nextWaitRange}
+        canStartNow={nextCanStartNow}
+        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
+        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
+        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
+        onNoShow={() => (nextWaiting ? noShow(nextWaiting.id) : null)}
+        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
+      />
+
+      {/* 
       <CallNowBanner
         nextWaiting={nextWaiting}
         nextNeeds={nextNeeds}
@@ -340,7 +506,7 @@ export default function Home() {
         nextWaitRange={nextWaitRange}
         onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
         onStartNext={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
-      />
+      /> */}
 
       <QuickQuote
         quoteSizeInput={quoteSizeInput}

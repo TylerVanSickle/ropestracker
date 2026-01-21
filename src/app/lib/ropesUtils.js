@@ -170,3 +170,78 @@ export function ensureQueueOrder(entries) {
   });
   return changed ? next : entries;
 }
+
+/**
+ * Public-facing “If you joined RIGHT NOW” estimate (strict FIFO).
+ * Returns: { waitMin, estStartISO, estEndISO }
+ *
+ * This does NOT reveal internal counts; it just returns the time math.
+ */
+export function estimateForNewGroupSize({
+  totalLines,
+  durationMin,
+  entries,
+  partySize,
+  now,
+}) {
+  const list = ensureQueueOrder(Array.isArray(entries) ? entries : []);
+  const nowDate = now instanceof Date ? now : new Date();
+
+  const active = [];
+  const waiting = [];
+
+  for (const e of list) {
+    const status = String(e.status || "").toUpperCase();
+
+    if (status === "UP") {
+      // Your estimator expects:
+      // active: [{ linesUsed, endTime }]
+      active.push({
+        linesUsed: Math.max(1, Number(e.partySize || 1)),
+        endTime: e.endTime || null,
+      });
+      continue;
+    }
+
+    if (status === "WAITING") {
+      waiting.push({
+        id: e.id,
+        partySize: Math.max(1, Number(e.partySize || 1)),
+        queueOrder: e.queueOrder,
+      });
+    }
+  }
+
+  waiting.sort((a, b) => {
+    const ao = typeof a.queueOrder === "number" ? a.queueOrder : 0;
+    const bo = typeof b.queueOrder === "number" ? b.queueOrder : 0;
+    return ao - bo;
+  });
+
+  const quoteId = "__QUOTE__";
+  waiting.push({
+    id: quoteId,
+    partySize: Math.max(1, Number(partySize || 1)),
+    queueOrder: Number.MAX_SAFE_INTEGER,
+  });
+
+  const map = computeEstimates({
+    totalLines,
+    durationMin,
+    active,
+    waiting,
+    now: nowDate,
+  });
+
+  const r = map.get(quoteId) || {
+    estStartISO: null,
+    estEndISO: null,
+    estWaitMin: null,
+  };
+
+  return {
+    waitMin: r.estWaitMin,
+    estStartISO: r.estStartISO,
+    estEndISO: r.estEndISO,
+  };
+}

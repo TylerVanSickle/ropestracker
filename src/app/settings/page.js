@@ -6,10 +6,10 @@ import {
   loadSettings,
   saveSettings,
   MAX_SLING_LINES,
+  clearStaffAuth,
 } from "@/app/lib/ropesStore";
 
 export default function SettingsPage() {
-  // ✅ Lazy init avoids setState-in-effect lint
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
 
@@ -19,14 +19,43 @@ export default function SettingsPage() {
       Math.max(0, Number(settings.totalLines ?? 0)),
     );
 
-    // keep duration reasonable
     const durationMin = Math.max(
       5,
       Math.min(180, Number(settings.durationMin ?? 45)),
     );
 
-    return { totalLines, durationMin };
-  }, [settings.totalLines, settings.durationMin]);
+    const paused = Boolean(settings.paused ?? false);
+
+    const venueName = String(settings.venueName ?? "Ropes Course Waitlist")
+      .trim()
+      .slice(0, 60);
+
+    const themeRaw = String(settings.clientTheme ?? "auto").toLowerCase();
+    const clientTheme =
+      themeRaw === "light" || themeRaw === "dark" || themeRaw === "auto"
+        ? themeRaw
+        : "auto";
+
+    const staffPin = String(settings.staffPin ?? "")
+      .trim()
+      .slice(0, 12);
+
+    return {
+      totalLines,
+      durationMin,
+      paused,
+      venueName,
+      clientTheme,
+      staffPin,
+    };
+  }, [
+    settings.totalLines,
+    settings.durationMin,
+    settings.paused,
+    settings.venueName,
+    settings.clientTheme,
+    settings.staffPin,
+  ]);
 
   function updateTotalLines(value) {
     setSettings((s) => ({
@@ -44,6 +73,30 @@ export default function SettingsPage() {
     setSavedMsg("");
   }
 
+  function updateClosed(value) {
+    setSettings((s) => ({ ...s, paused: Boolean(value) }));
+    setSavedMsg("");
+  }
+
+  function updateVenueName(value) {
+    setSettings((s) => ({ ...s, venueName: value }));
+    setSavedMsg("");
+  }
+
+  function updateClientTheme(value) {
+    setSettings((s) => ({ ...s, clientTheme: value }));
+    setSavedMsg("");
+  }
+
+  function updateStaffPin(value) {
+    // allow digits, letters, dash, underscore
+    const safe = String(value ?? "")
+      .replace(/[^\w-]/g, "")
+      .slice(0, 12);
+    setSettings((s) => ({ ...s, staffPin: safe }));
+    setSavedMsg("");
+  }
+
   function onSave() {
     saveSettings(clamped);
     setSavedMsg("Saved ✅");
@@ -51,11 +104,24 @@ export default function SettingsPage() {
   }
 
   function onReset() {
-    // reset to your known defaults (and still respect MAX)
-    const defaults = { totalLines: MAX_SLING_LINES, durationMin: 45 };
+    const defaults = {
+      totalLines: MAX_SLING_LINES,
+      durationMin: 45,
+      paused: false,
+      venueName: "Ropes Course Waitlist",
+      clientTheme: "auto",
+      staffPin: "",
+    };
     setSettings(defaults);
     saveSettings(defaults);
+    clearStaffAuth();
     setSavedMsg("Reset ✅");
+    setTimeout(() => setSavedMsg(""), 1500);
+  }
+
+  function logoutStaff() {
+    clearStaffAuth();
+    setSavedMsg("Staff logged out ✅");
     setTimeout(() => setSavedMsg(""), 1500);
   }
 
@@ -74,12 +140,115 @@ export default function SettingsPage() {
           <Link className="button" href="/">
             Back
           </Link>
-          <button className="button" onClick={onReset}>
+          <button className="button" onClick={onReset} type="button">
             Reset
           </button>
-          <button className="button button-primary" onClick={onSave}>
+          <button className="button" onClick={logoutStaff} type="button">
+            Log out staff
+          </button>
+          <button
+            className="button button-primary"
+            onClick={onSave}
+            type="button"
+          >
             Save
           </button>
+        </div>
+      </div>
+
+      <div className="card spacer-md">
+        <h2 className="section-title">Public display</h2>
+
+        <div className="guest-form spacer-sm">
+          <label className="field">
+            <span className="field-label">Display name (shown on /client)</span>
+            <input
+              className="input"
+              type="text"
+              value={settings.venueName ?? ""}
+              onChange={(e) => updateVenueName(e.target.value)}
+              placeholder="Ropes Course Waitlist"
+            />
+            <p className="muted helper">
+              This appears on the public-facing screen. Keep it short.
+            </p>
+          </label>
+
+          <label className="field">
+            <span className="field-label">Public status</span>
+
+            <div className="estimate-row" style={{ alignItems: "center" }}>
+              <div>
+                <strong>{clamped.paused ? "Closed" : "Open"}</strong>
+                <span className="sep">•</span>
+                <span className="muted">
+                  When closed, /client shows a closed banner and hides ETAs.
+                </span>
+              </div>
+
+              <div style={{ marginLeft: "auto" }}>
+                <button
+                  className={`button ${clamped.paused ? "" : "button-primary"}`}
+                  type="button"
+                  onClick={() => updateClosed(false)}
+                  disabled={!clamped.paused}
+                >
+                  Open
+                </button>{" "}
+                <button
+                  className={`button ${clamped.paused ? "button-primary" : ""}`}
+                  type="button"
+                  onClick={() => updateClosed(true)}
+                  disabled={clamped.paused}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <p className="muted helper">
+              Use this if the course is temporarily down (reset, safety check,
+              staffing, etc.).
+            </p>
+          </label>
+
+          <label className="field">
+            <span className="field-label">Client display theme</span>
+            <select
+              className="input"
+              value={settings.clientTheme ?? "auto"}
+              onChange={(e) => updateClientTheme(e.target.value)}
+            >
+              <option value="auto">Auto (match device)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <p className="muted helper">
+              This only affects the public /client screen (not the staff view).
+            </p>
+          </label>
+        </div>
+      </div>
+
+      <div className="card spacer-md">
+        <h2 className="section-title">Staff access</h2>
+
+        <div className="guest-form spacer-sm">
+          <label className="field">
+            <span className="field-label">Staff PIN (optional)</span>
+            <input
+              className="input"
+              type="text"
+              value={settings.staffPin ?? ""}
+              onChange={(e) => updateStaffPin(e.target.value)}
+              placeholder="Set a PIN to lock staff view"
+              autoComplete="off"
+            />
+            <p className="muted helper">
+              If set, the staff page (/) will require this PIN. Leave blank to
+              disable the lock.
+            </p>
+          </label>
         </div>
       </div>
 
@@ -128,12 +297,35 @@ export default function SettingsPage() {
               <span className="muted">Current duration:</span>{" "}
               <strong>{clamped.durationMin} min</strong>
             </div>
+            <div>
+              <span className="muted">Public status:</span>{" "}
+              <strong>{clamped.paused ? "Closed" : "Open"}</strong>
+            </div>
+            <div>
+              <span className="muted">Client theme:</span>{" "}
+              <strong>
+                {clamped.clientTheme === "auto"
+                  ? "Auto"
+                  : clamped.clientTheme === "dark"
+                    ? "Dark"
+                    : "Light"}
+              </strong>
+            </div>
+            <div>
+              <span className="muted">Staff PIN:</span>{" "}
+              <strong>{clamped.staffPin ? "Enabled" : "Off"}</strong>
+            </div>
             {savedMsg ? (
               <div>
                 <strong>{savedMsg}</strong>
               </div>
             ) : null}
           </div>
+
+          <p className="muted helper" style={{ marginTop: 10 }}>
+            Tip: Public screen: <strong>/client</strong> • Print sheet:{" "}
+            <strong>/print</strong>
+          </p>
         </div>
       </div>
     </main>

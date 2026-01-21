@@ -174,6 +174,10 @@ body {
   align-items: stretch;
 }
 
+.item-next {
+  border-color: #111827;
+}
+
 /* Pills / Badges */
 .pill,
 .badge {
@@ -195,10 +199,6 @@ body {
 .pill-alert {
   border-color: #ef4444;
   background: #fee2e2;
-}
-
-.item-next {
-  border-color: #111827;
 }
 
 /* =========================
@@ -238,7 +238,6 @@ body {
   }
 }
 
-/* (Optional) If you have these classes used elsewhere */
 .field-label {
   display: block;
   font-size: 12px;
@@ -250,7 +249,7 @@ body {
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 10px 10px;
+  padding: 10px;
   font-size: 14px;
   background: var(--color-card);
   color: var(--color-text);
@@ -297,7 +296,6 @@ body {
   background: #fafafa;
 }
 
-/* Call banner */
 .call-banner {
   border: 1px solid #ef4444;
   background: #fff7f7;
@@ -337,7 +335,7 @@ body {
 }
 
 /* =========================
-   Quick quote
+   Quick quote / Next strip
    ========================= */
 .quote-row {
   display: flex;
@@ -350,6 +348,7 @@ body {
 .quote-controls {
   min-width: 220px;
 }
+
 .big-count {
   font-size: 22px;
 }
@@ -380,6 +379,9 @@ body {
   font-size: 16px;
 }
 
+/* =========================
+   Modal
+   ========================= */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -404,57 +406,439 @@ body {
   gap: 12px;
   align-items: center;
 }
-.big-count {
-  font-size: 22px;
+
+/* =========================
+   Client Display Theme (Light / Dark / Auto)
+   Only affects /client page via vars
+   ========================= */
+.client-display {
+  /* defaults (dark-ish) */
+  --client-bg: #0b0f14;
+  --client-card: rgba(255, 255, 255, 0.06);
+  --client-border: rgba(255, 255, 255, 0.12);
+  --client-text: #f5f7fb;
+  --client-muted: rgba(245, 247, 251, 0.82);
+
+  min-height: 100vh;
+  background: var(--client-bg);
+  color: var(--client-text);
+  font-family: var(--font-main);
 }
 
-.next-strip {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: #fafafa;
+/* Auto: follow OS preference */
+@media (prefers-color-scheme: dark) {
+  .client-display.client-theme-auto {
+    --client-bg: #0b1020;
+    --client-card: rgba(255, 255, 255, 0.06);
+    --client-border: rgba(255, 255, 255, 0.12);
+    --client-text: #f3f4f6;
+    --client-muted: rgba(243, 244, 246, 0.72);
+  }
+}
+@media (prefers-color-scheme: light) {
+  .client-display.client-theme-auto {
+    --client-bg: #f9fafb;
+    --client-card: #ffffff;
+    --client-border: #e5e7eb;
+    --client-text: #111827;
+    --client-muted: #6b7280;
+  }
+}
+
+/* Forced themes */
+.client-display.client-theme-dark {
+  --client-bg: #0b1020;
+  --client-card: rgba(255, 255, 255, 0.06);
+  --client-border: rgba(255, 255, 255, 0.12);
+  --client-text: #f3f4f6;
+  --client-muted: rgba(243, 244, 246, 0.72);
+}
+
+.client-display.client-theme-light {
+  --client-bg: #f9fafb;
+  --client-card: #ffffff;
+  --client-border: #e5e7eb;
+  --client-text: #111827;
+  --client-muted: #6b7280;
+}
+
+/* =========================
+   Client Display Mode (/client)
+   ========================= */
+.client-display .client-wrap {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.client-display.client-active .client-wrap {
+  padding: 26px;
+}
+
+.client-display .client-header {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
-  align-items: center;
+  margin-bottom: 14px;
 }
 
-.next-strip-hot {
-  border-color: #ef4444;
-  background: #fff7f7;
+.client-display .client-title {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  font-size: 32px;
 }
 
-.next-strip-title {
+.client-display.client-active .client-title {
+  font-size: 44px;
+}
+
+.client-display .client-subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  opacity: 0.9;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-subtitle {
+  font-size: 18px;
+}
+
+.client-display .client-pills {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+}
+
+.client-display .client-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--client-border);
+  font-size: 13px;
+  opacity: 0.95;
+  white-space: nowrap;
+  color: var(--client-text);
+}
+
+.client-display.client-active .client-pill {
   font-size: 16px;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(17, 24, 39, 0.55);
+.client-display .client-btn {
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--client-text);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.client-display.client-active .client-btn {
+  font-size: 16px;
+}
+
+.client-display .client-grid {
   display: grid;
-  place-items: center;
-  padding: 16px;
-  z-index: 50;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
 }
 
-.modal {
-  width: min(720px, 100%);
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 16px;
+@media (max-width: 900px) {
+  .client-display .client-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.modal-top {
+.client-display .client-card {
+  background: var(--client-card);
+  border: 1px solid var(--client-border);
+  border-radius: 18px;
+  padding: 14px;
+  overflow: hidden;
+  color: var(--client-text);
+}
+
+.client-display.client-active .client-card {
+  padding: 18px;
+}
+
+.client-display .client-card.highlight {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.client-display .client-card.wide {
+  grid-column: 1 / -1;
+}
+
+.client-display .client-h2 {
+  margin: 0 0 10px 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.client-display.client-active .client-h2 {
+  font-size: 26px;
+}
+
+.client-display .client-empty {
+  font-size: 14px;
+  opacity: 0.9;
+  padding: 10px 0;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-empty {
+  font-size: 22px;
+}
+
+.client-display .client-nextbox {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.client-display.client-active .client-nextbox {
+  padding: 18px;
+}
+
+.client-display .client-nextname {
+  font-size: 34px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  line-height: 1.03;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-display.client-active .client-nextname {
+  font-size: 54px;
+}
+
+.client-display .client-nextmeta {
+  margin-top: 10px;
+  font-size: 14px;
+  opacity: 0.95;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
   align-items: center;
+}
+
+.client-display.client-active .client-nextmeta {
+  font-size: 22px;
+}
+
+.client-display .client-note {
+  margin-top: 10px;
+  font-size: 13px;
+  opacity: 0.85;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-note {
+  font-size: 18px;
+}
+
+.client-display .client-quotes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .client-display .client-quotes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.client-display .client-quote {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.client-display.client-active .client-quote {
+  padding: 16px;
+}
+
+.client-display .client-qsize {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-qsize {
+  font-size: 18px;
+}
+
+.client-display .client-qtime {
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+}
+
+.client-display.client-active .client-qtime {
+  font-size: 36px;
+}
+
+.client-display .client-qeta {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-qeta {
+  font-size: 16px;
+}
+
+.client-display .client-footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.82;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .client-footer {
+  font-size: 18px;
+}
+
+/* =========================
+   Client Display extras: Live + Closed + How it works
+   ========================= */
+.client-display .live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.client-display .live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: livePulse 1.6s infinite;
+}
+
+.client-display .live-dot.closed {
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+  animation: closedPulse 1.6s infinite;
+}
+
+@keyframes livePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes closedPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.client-display .paused-banner {
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.client-display.client-active .paused-banner {
+  padding: 18px;
+}
+
+.client-display .paused-title {
+  font-weight: 950;
+  letter-spacing: -0.01em;
+  font-size: 18px;
+}
+
+.client-display.client-active .paused-title {
+  font-size: 26px;
+}
+
+.client-display .paused-sub {
+  margin-top: 6px;
+  opacity: 0.92;
+  font-size: 13px;
+  color: var(--client-muted);
+}
+
+.client-display.client-active .paused-sub {
+  font-size: 18px;
+}
+
+.client-display .how-card {
+  margin-top: 14px;
+}
+
+.client-display .how-list {
+  margin: 10px 0 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.client-display .how-list li {
+  opacity: 0.92;
+  font-size: 13px;
+}
+
+.client-display.client-active .how-list li {
+  font-size: 18px;
+}
+
+/* =========================
+   Print tweaks
+   ========================= */
+@media print {
+  .topbar .row,
+  .button,
+  .client-btn {
+    display: none !important;
+  }
+
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+
+  .card {
+    border: 1px solid #ddd;
+    box-shadow: none;
+  }
+
+  body {
+    background: white;
+  }
 }
