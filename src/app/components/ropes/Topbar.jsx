@@ -37,13 +37,13 @@ export default function Topbar({
           <button className="button" type="button" onClick={onOpenClient}>
             Client
           </button>
-          <button className="button" type="button" onClick={onOpenPrint}>
+          {/* <button className="button" type="button" onClick={onOpenPrint}>
             Print
-          </button>
+          </button> */}
 
-          <button className="button" type="button" onClick={onArchiveToday}>
+          {/* <button className="button" type="button" onClick={onArchiveToday}>
             Archive Today
-          </button>
+          </button> */}
 
           <button
             className="button"
