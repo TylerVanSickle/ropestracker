@@ -1,6 +1,6 @@
 export const MAX_SLING_LINES = 15;
 
-export const LS_KEY_SETTINGS = "ropes_settings_v1";
+export const LS_KEY_SETTINGS = "ropes_settings_v2";
 export const LS_KEY_ENTRIES = "ropes_entries_v1";
 export const LS_KEY_UPDATED_AT = "ropes_updatedAt_v1";
 export const LS_KEY_VERSION = "ropes_version_v1";
@@ -15,11 +15,11 @@ const DEFAULT_SETTINGS = {
   totalLines: 15,
   durationMin: 45,
   topDurationMin: 35, // timer when top operator starts the course
-  stagingDurationMin: 5, // optional: how long they have to arrive (or omit)
+  stagingDurationMin: 45, // optional: how long they have to arrive (or omit)
   paused: false, // "closed" on client
   venueName: "Ropes Course Waitlist",
   clientTheme: "auto", // "auto" | "light" | "dark"
-  staffPin: "", // if set, staff page requires PIN
+  staffPin: "3003", // if set, staff page requires PIN
 };
 
 const BC_NAME = "ropes_waitlist_updates_v1";
@@ -86,18 +86,32 @@ export function loadSettings() {
 
   try {
     const raw = localStorage.getItem(LS_KEY_SETTINGS);
-    if (!raw) return DEFAULT_SETTINGS;
-
-    const parsed = JSON.parse(raw) || {};
+    const parsed = raw ? JSON.parse(raw) || {} : {};
 
     const totalLines = Math.min(
       MAX_SLING_LINES,
-      Math.max(0, Number(parsed.totalLines ?? DEFAULT_SETTINGS.totalLines)),
+      Math.max(0, Number(parsed.totalLines ?? DEFAULT_SETTINGS.totalLines))
     );
 
     const durationMin = Math.max(
       5,
-      Math.min(180, Number(parsed.durationMin ?? DEFAULT_SETTINGS.durationMin)),
+      Math.min(180, Number(parsed.durationMin ?? DEFAULT_SETTINGS.durationMin))
+    );
+
+    const topDurationMin = Math.max(
+      5,
+      Math.min(
+        180,
+        Number(parsed.topDurationMin ?? DEFAULT_SETTINGS.topDurationMin)
+      )
+    );
+
+    const stagingDurationMin = Math.max(
+      5,
+      Math.min(
+        180,
+        Number(parsed.stagingDurationMin ?? DEFAULT_SETTINGS.stagingDurationMin)
+      )
     );
 
     const paused = Boolean(parsed.paused ?? DEFAULT_SETTINGS.paused);
@@ -107,7 +121,7 @@ export function loadSettings() {
       .slice(0, 60);
 
     const t = String(
-      parsed.clientTheme ?? DEFAULT_SETTINGS.clientTheme,
+      parsed.clientTheme ?? DEFAULT_SETTINGS.clientTheme
     ).toLowerCase();
     const clientTheme =
       t === "dark" || t === "light" || t === "auto" ? t : "auto";
@@ -116,14 +130,20 @@ export function loadSettings() {
       .trim()
       .slice(0, 12);
 
-    return {
+    const settings = {
       totalLines,
       durationMin,
+      topDurationMin,
+      stagingDurationMin,
       paused,
       venueName,
       clientTheme,
       staffPin,
     };
+
+    localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(settings));
+
+    return settings;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -187,10 +207,6 @@ export function subscribeToRopesStorage(onChange) {
   };
 }
 
-/* =========================
-   Undo stack (entries snapshots)
-   ========================= */
-
 export function loadUndoStack() {
   if (typeof window === "undefined") return [];
   try {
@@ -212,11 +228,6 @@ export function saveUndoStack(stack) {
     // ok
   }
 }
-
-/* =========================
-   Auth flag (staff PIN)
-   ========================= */
-
 export function loadStaffAuthedAt() {
   if (typeof window === "undefined") return null;
   try {
@@ -308,10 +319,6 @@ export function loadArchive(key) {
   }
 }
 
-/* =========================
-   Misc
-   ========================= */
-
 export function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -321,7 +328,6 @@ export function formatTime(value) {
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
-// ===== Top Ropes extensions (local-only, backward compatible) =====
 
 export function normalizeEntry(e) {
   if (!e || typeof e !== "object") return e;
@@ -367,7 +373,7 @@ export function patchEntry(entryId, patch) {
   const { entries: normalized, changed } = normalizeEntries(entries);
 
   const next = normalized.map((e) =>
-    e.id === entryId ? { ...e, ...patch } : e,
+    e.id === entryId ? { ...e, ...patch } : e
   );
 
   // If normalization changed anything, we still want to persist
@@ -383,9 +389,19 @@ export function setEntryStatus(entryId, status) {
 
 export function startEntry(entryId, durationMin) {
   const now = Date.now();
-  const dur = Math.max(5, Number(durationMin || 45));
+
+  // 🔒 HARD SOURCE OF TRUTH
+  const settings = loadSettings();
+
+  const dur =
+    Number.isFinite(Number(durationMin)) && Number(durationMin) > 0
+      ? Number(durationMin)
+      : Number(settings.stagingDurationMin);
+
   const startedAtISO = new Date(now).toISOString();
   const endTimeISO = new Date(now + dur * 60 * 1000).toISOString();
+
+  console.log("[startEntry] duration used:", dur); // 👈 DEBUG, KEEP FOR NOW
 
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
@@ -398,15 +414,9 @@ export function startEntry(entryId, durationMin) {
     return {
       ...e,
       status: "UP",
-      // ✅ IMPORTANT: staff page depends on this for occupiedLines
       linesUsed: linesNeeded,
-
-      // ✅ staff page uses startedAt
       startedAt: startedAtISO,
-
-      // optional: keep for /top display or future use
       startTime: startedAtISO,
-
       endTime: endTimeISO,
     };
   });
@@ -429,7 +439,7 @@ export function extendEntryByMinutes(entryId, addMin) {
     if (!currentEnd || Number.isNaN(currentEnd.getTime())) return e;
 
     const newEnd = new Date(
-      currentEnd.getTime() + add * 60 * 1000,
+      currentEnd.getTime() + add * 60 * 1000
     ).toISOString();
     return {
       ...e,

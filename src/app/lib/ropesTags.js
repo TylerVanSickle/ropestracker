@@ -1,7 +1,12 @@
 export const COURSE_TAGS = [
-  "Pink Panther",
+  "Red Toucans",
+  "Orange Apes",
   "Yellow Cobras",
-  "Blue Barracudas",
-  "Green Anacondas",
-  "Red Rattlers",
+  "Green Tree Frogs",
+  "Blue Sloths",
+  "Purple Parrots",
+  "Pink Panthers",
+  "Brown Koalas",
+  "Black Jaguar",
+  "Maroon Orangutan",
 ];

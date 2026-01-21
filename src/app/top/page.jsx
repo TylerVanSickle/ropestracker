@@ -74,10 +74,10 @@ function getDerived(entriesRaw, settings) {
     .filter((e) => String(e.coursePhase || "").toUpperCase() === "SENT")
     .sort((a, b) => {
       const ao = new Date(
-        a.sentUpAt || a.startedAt || a.createdAt || 0,
+        a.sentUpAt || a.startedAt || a.createdAt || 0
       ).getTime();
       const bo = new Date(
-        b.sentUpAt || b.startedAt || b.createdAt || 0,
+        b.sentUpAt || b.startedAt || b.createdAt || 0
       ).getTime();
       return ao - bo;
     });
@@ -87,10 +87,10 @@ function getDerived(entriesRaw, settings) {
     .filter((e) => String(e.coursePhase || "").toUpperCase() !== "SENT")
     .sort((a, b) => {
       const ao = new Date(
-        a.startTime || a.startedAt || a.createdAt || 0,
+        a.startTime || a.startedAt || a.createdAt || 0
       ).getTime();
       const bo = new Date(
-        b.startTime || b.startedAt || b.createdAt || 0,
+        b.startTime || b.startedAt || b.createdAt || 0
       ).getTime();
       return ao - bo;
     });
@@ -132,7 +132,7 @@ export default function TopRopesPage() {
 
   const derived = useMemo(
     () => getDerived(entries, settings),
-    [entries, settings],
+    [entries, settings]
   );
   const { waiting, up, sentUp, onCourse, availableLines, totalLines } = derived;
 
@@ -140,7 +140,7 @@ export default function TopRopesPage() {
 
   const availableTagsGlobal = useMemo(
     () => getAvailableTags(up, COURSE_TAGS),
-    [up],
+    [up]
   );
 
   function setLocalEntries(nextEntries) {
@@ -219,7 +219,7 @@ export default function TopRopesPage() {
       .slice(0, 40);
     const partySizeNum = Math.max(
       1,
-      Math.min(15, Number(editDraft.partySize || 1)),
+      Math.min(15, Number(editDraft.partySize || 1))
     );
     const phone = String(editDraft.phone || "")
       .trim()
@@ -540,8 +540,8 @@ export default function TopRopesPage() {
                     left == null
                       ? "—"
                       : left >= 0
-                        ? `${left} min left`
-                        : `${Math.abs(left)} min overdue`;
+                      ? `${left} min left`
+                      : `${Math.abs(left)} min overdue`;
 
                   return (
                     <div key={e.id} className="item" style={{ padding: 14 }}>

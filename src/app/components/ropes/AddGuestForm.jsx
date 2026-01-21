@@ -1,6 +1,16 @@
 "use client";
 
+import { useMemo } from "react";
+import { loadSettings, MAX_SLING_LINES } from "@/app/lib/ropesStore";
+
 export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
+  // Pull current settings so we can clamp party size to totalLines
+  const maxLines = useMemo(() => {
+    const s = loadSettings();
+    const n = Number(s?.totalLines ?? MAX_SLING_LINES);
+    return Number.isFinite(n) ? Math.max(1, n) : MAX_SLING_LINES;
+  }, []);
+
   return (
     <div className="card spacer-md">
       <div className="card-header">
@@ -33,13 +43,41 @@ export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
               className="input"
               type="number"
               min={1}
+              max={maxLines}
               value={newGuest.partySize}
-              onChange={(e) =>
+              onChange={(e) => {
+                const raw = e.target.value;
+
+                if (raw === "") {
+                  setNewGuest((g) => ({ ...g, partySize: "" }));
+                  return;
+                }
+
+                const n = Number(raw);
+                if (!Number.isFinite(n)) return;
+
+                const clamped = Math.min(maxLines, Math.max(1, n));
+
                 setNewGuest((g) => ({
                   ...g,
-                  partySize: Math.max(1, Number(e.target.value || 1)),
-                }))
-              }
+                  partySize: clamped,
+                }));
+              }}
+              onBlur={() => {
+                setNewGuest((g) => {
+                  const current = g.partySize;
+
+                  if (
+                    current === "" ||
+                    !Number.isFinite(Number(current)) ||
+                    current < 1
+                  ) {
+                    return { ...g, partySize: 1 };
+                  }
+
+                  return { ...g, partySize: Math.min(maxLines, current) };
+                });
+              }}
             />
           </label>
         </div>

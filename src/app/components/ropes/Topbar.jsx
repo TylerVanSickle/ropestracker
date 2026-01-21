@@ -25,7 +25,7 @@ export default function Topbar({
             <strong className="big-count">{availableLines}</strong> /{" "}
             {totalLines} available{" "}
             <span className="muted">({MAX_SLING_LINES} max)</span>
-          </p>
+          </p> 
 
           <p className="muted helper">
             “Up now” = on the course. “Waiting” = queued until enough lines are

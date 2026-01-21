@@ -12,7 +12,6 @@ function computeMinutesRemaining(endTime) {
 }
 
 export default function EditEntryModal({ entry, settings, onClose, onSave }) {
-  // Always derive safe values so hooks always run (no conditional hooks)
   const safeEntry = entry ?? {
     id: "__none__",
     status: "WAITING",
@@ -26,9 +25,13 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
 
   const isUp = safeEntry.status === "UP";
 
-  // This memo is fine; modal remounts by key={entry.id} so initial state resets cleanly.
   const initialDraft = useMemo(() => {
     const minsRemaining = isUp ? computeMinutesRemaining(safeEntry.endTime) : 0;
+
+    const partySize = Math.max(1, Number(safeEntry.partySize || 1));
+    const linesUsed = isUp
+      ? Math.max(1, Number(safeEntry.linesUsed ?? partySize))
+      : null;
 
     return {
       id: safeEntry.id,
@@ -36,10 +39,8 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
       name: safeEntry.name || "",
       phone: safeEntry.phone || "",
       notes: safeEntry.notes || "",
-      partySize: Math.max(1, Number(safeEntry.partySize || 1)),
-      linesUsed: isUp
-        ? Math.max(1, Number(safeEntry.linesUsed || safeEntry.partySize || 1))
-        : null,
+      partySize,
+      linesUsed,
       minutesRemaining: isUp ? minsRemaining : null,
     };
   }, [
@@ -56,7 +57,6 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
 
   const [draft, setDraft] = useState(initialDraft);
 
-  // If entry is actually missing, just render nothing AFTER hooks
   if (!entry) return null;
 
   function save() {
@@ -113,12 +113,29 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
               type="number"
               min={1}
               value={draft.partySize}
-              onChange={(e) =>
+              onChange={(e) => {
+                const newPartySize =
+                  e.target.value === "" ? "" : Number(e.target.value);
                 setDraft((d) => ({
                   ...d,
-                  partySize: Math.max(1, Number(e.target.value || 1)),
-                }))
-              }
+                  partySize: newPartySize,
+                  // Keep linesUsed equal to partySize if it was previously the same
+                  linesUsed:
+                    d.linesUsed === d.partySize || d.linesUsed === ""
+                      ? newPartySize
+                      : d.linesUsed,
+                }));
+              }}
+              onBlur={() => {
+                if (draft.partySize === "" || draft.partySize < 1) {
+                  setDraft((d) => ({
+                    ...d,
+                    partySize: 1,
+                    linesUsed:
+                      d.linesUsed === "" || d.linesUsed < 1 ? 1 : d.linesUsed,
+                  }));
+                }
+              }}
             />
           </label>
         </div>
@@ -166,13 +183,25 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
                   type="number"
                   min={1}
                   max={settings.totalLines}
-                  value={draft.linesUsed ?? 1}
-                  onChange={(e) =>
+                  value={draft.partySize}
+                  onChange={(e) => {
+                    const newPartySize =
+                      e.target.value === "" ? "" : Number(e.target.value);
                     setDraft((d) => ({
                       ...d,
-                      linesUsed: Math.max(1, Number(e.target.value || 1)),
-                    }))
-                  }
+                      partySize: newPartySize,
+                      linesUsed: newPartySize,
+                    }));
+                  }}
+                  onBlur={() => {
+                    if (draft.partySize === "" || draft.partySize < 1) {
+                      setDraft((d) => ({
+                        ...d,
+                        partySize: 1,
+                        linesUsed: 1,
+                      }));
+                    }
+                  }}
                 />
                 <p className="muted helper">
                   Use if someone gets off early / returns a ticket.
@@ -191,7 +220,7 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
                       ...d,
                       minutesRemaining: Math.max(
                         0,
-                        Number(e.target.value || 0),
+                        Number(e.target.value || 0)
                       ),
                     }))
                   }

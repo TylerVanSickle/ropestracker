@@ -151,7 +151,7 @@ export default function Home() {
 
   const active = useMemo(
     () => entries.filter((e) => e.status === "UP"),
-    [entries],
+    [entries]
   );
 
   const occupiedLines = active.reduce((sum, e) => sum + (e.linesUsed || 0), 0);
@@ -246,7 +246,7 @@ export default function Home() {
     alert(
       ok
         ? "Notification message copied to clipboard."
-        : "Could not copy message.",
+        : "Could not copy message."
     );
   }
 
@@ -280,7 +280,7 @@ export default function Home() {
 
   function startGroup(id) {
     // startGroup is now "Send Up" (reserve lines + show on /top as Coming Up Now)
-    const HOLD_MIN = 5;
+    const HOLD_MIN = settings.durationMin;
 
     setEntries((prev) => {
       pushUndoSnapshot(prev);
@@ -300,7 +300,7 @@ export default function Home() {
       const activePrev = prev.filter((e) => e.status === "UP");
       const occupiedPrev = activePrev.reduce(
         (sum, e) => sum + (e.linesUsed || 0),
-        0,
+        0
       );
       const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
 
@@ -308,14 +308,14 @@ export default function Home() {
 
       if (linesNeeded > settings.totalLines) {
         alert(
-          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`,
+          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`
         );
         return prev;
       }
 
       if (linesNeeded > availablePrev) {
         alert(
-          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`,
+          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`
         );
         return prev;
       }

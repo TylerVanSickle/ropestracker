@@ -50,7 +50,10 @@ export default function UpNowList({
               <div key={e.id} className="item">
                 <div className="item-main">
                   <div className="item-title">
-                    {e.name} <span className="pill">{e.linesUsed} lines</span>{" "}
+                    {e.name}{" "}
+                    <span className="pill">
+                      {Math.max(1, Number(e.partySize || 1))} lines
+                    </span>
                     <span className="pill">{phaseLabel}</span>
                     {e.assignedTag ? (
                       <span className="pill">{e.assignedTag}</span>
