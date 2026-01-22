@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS = {
   paused: false, // "closed" on client
   venueName: "Ropes Course Waitlist",
   clientTheme: "auto", // "auto" | "light" | "dark"
-  staffPin: "3003", // if set, staff page requires PIN
+  staffPin: "", // if set, staff page requires PIN
 };
 
 const BC_NAME = "ropes_waitlist_updates_v1";
