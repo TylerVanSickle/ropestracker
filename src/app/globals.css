@@ -17,9 +17,8 @@
   --padding: 16px;
 
   /* Typography */
-  --font-main:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
 /* =========================
@@ -615,7 +614,7 @@ body {
   font-size: 34px;
   font-weight: 950;
   letter-spacing: -0.02em;
-  line-height: 1.03;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
