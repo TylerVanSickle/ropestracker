@@ -374,8 +374,8 @@ export default function TopRopesPage() {
           }}
         >
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Status
+            <div className="muted" style={{ fontSize: 13 }}>
+              Status:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {closed ? "CLOSED" : "OPEN"}
@@ -383,8 +383,8 @@ export default function TopRopesPage() {
           </div>
 
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Lines
+            <div className="muted" style={{ fontSize: 13 }}>
+              Lines:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {availableLines} / {totalLines} free
@@ -392,29 +392,29 @@ export default function TopRopesPage() {
           </div>
 
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Coming Up
+            <div className="muted" style={{ fontSize: 13 }}>
+              Coming Up:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{sentCount}</div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              On Course
+            <div className="muted" style={{ fontSize: 13 }}>
+              On Course:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{courseCount}</div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Waiting
+            <div className="muted" style={{ fontSize: 13 }}>
+              Waiting:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>{waitingCount}</div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Course Timer
+            <div className="muted" style={{ fontSize: 13 }}>
+              Course Timer:
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {Number(settings?.topDurationMin ?? 35)} min
