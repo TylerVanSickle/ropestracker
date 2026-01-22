@@ -1,3 +1,5 @@
+// src/app/lib/ropesStore.js
+
 export const MAX_SLING_LINES = 15;
 
 export const LS_KEY_SETTINGS = "ropes_settings_v2";
@@ -12,11 +14,10 @@ export const LS_KEY_AUTH = "ropes_staff_authed_v1";
 export const LS_KEY_ARCHIVE_PREFIX = "ropes_archive_";
 
 /** =========================
- *  NEW: DB-friendly collections
+ *  DB-friendly collections (localStorage-only for now)
  *  ========================= */
 export const LS_KEY_GUEST_NOTES = "ropes_guest_notes_v1";
-export const LS_KEY_STAFF_FEED = "ropes_staff_feed_v1";
-export const LS_KEY_PUBLIC_ANNOUNCEMENTS = "ropes_public_announcements_v1";
+export const LS_KEY_FLAG_ARCHIVE = "ropes_flag_archive_v1";
 
 /** =========================
  *  Limits (DB-ready)
@@ -29,8 +30,9 @@ export const LIMITS = {
 
   // collections
   guestNoteText: 1000,
-  staffMessageText: 400,
-  publicAnnouncementText: 220,
+
+  // archive reason
+  archiveReasonText: 220,
 
   // settings
   staffPinMaxDigits: 4,
@@ -52,7 +54,8 @@ export function clampText(value, max) {
   return trimmedStart.slice(0, max);
 }
 
-function digitsOnlyMax(s, maxDigits) {
+// ✅ exported because app/page.js imports it
+export function digitsOnlyMax(s, maxDigits) {
   const raw = String(s ?? "");
   const digits = raw.replace(/\D/g, "");
   return digits.slice(0, maxDigits);
@@ -62,7 +65,7 @@ const DEFAULT_SETTINGS = {
   totalLines: 15,
   durationMin: 45,
   topDurationMin: 35, // timer when top operator starts the course
-  stagingDurationMin: 45, // optional: how long they have to arrive (or omit)
+  stagingDurationMin: 45, // how long they have to arrive / hold time
   paused: false, // "closed" on client
   venueName: "Ropes Course Waitlist",
   clientTheme: "auto", // "auto" | "light" | "dark"
@@ -217,8 +220,8 @@ export function loadSettings() {
       staffPin,
     };
 
+    // normalize stored settings
     localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(settings));
-
     return settings;
   } catch {
     return DEFAULT_SETTINGS;
@@ -234,11 +237,9 @@ export function saveSettings(settings) {
 
 export function loadEntries() {
   if (typeof window === "undefined") return [];
-
   try {
     const raw = localStorage.getItem(LS_KEY_ENTRIES);
     if (!raw) return [];
-
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -262,9 +263,10 @@ export function subscribeToRopesStorage(onChange) {
       e.key === LS_KEY_ENTRIES ||
       e.key === LS_KEY_UPDATED_AT ||
       e.key === LS_KEY_VERSION ||
+      e.key === LS_KEY_UNDO ||
+      e.key === LS_KEY_AUTH ||
       e.key === LS_KEY_GUEST_NOTES ||
-      e.key === LS_KEY_STAFF_FEED ||
-      e.key === LS_KEY_PUBLIC_ANNOUNCEMENTS
+      e.key === LS_KEY_FLAG_ARCHIVE
     ) {
       onChange?.();
     }
@@ -323,6 +325,7 @@ export function setStaffAuthedNow() {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(LS_KEY_AUTH, String(Date.now()));
+    stampAll("STAFF_AUTHED");
   } catch {
     // ok
   }
@@ -332,13 +335,14 @@ export function clearStaffAuth() {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(LS_KEY_AUTH);
+    stampAll("STAFF_AUTH_CLEARED");
   } catch {
     // ok
   }
 }
 
 /* =========================
-   Archives
+   Archives (daily snapshot)
    ========================= */
 
 function pad2(n) {
@@ -379,8 +383,7 @@ export function listArchives() {
       if (!k) continue;
       if (k.startsWith(LS_KEY_ARCHIVE_PREFIX)) out.push(k);
     }
-    // newest first
-    out.sort((a, b) => (a < b ? 1 : -1));
+    out.sort((a, b) => (a < b ? 1 : -1)); // newest first
     return out;
   } catch {
     return [];
@@ -399,6 +402,10 @@ export function loadArchive(key) {
   }
 }
 
+/* =========================
+   Utilities
+   ========================= */
+
 export function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -410,8 +417,10 @@ export function formatTime(value) {
 }
 
 /** =========================
- *  NEW: Guest Notes (DB-ready)
+ *  Guest Notes (per-entry)
+ *  Bottom can add; Top can archive.
  *  ========================= */
+
 export function loadGuestNotes() {
   return loadList(LS_KEY_GUEST_NOTES);
 }
@@ -444,77 +453,193 @@ export function addGuestNote({
 
 export function getNotesForEntry(entryId) {
   const id = String(entryId);
-  return loadGuestNotes().filter((n) => n.entryId === id);
+  return loadGuestNotes().filter((n) => n && String(n.entryId) === id);
 }
 
-/** =========================
- *  NEW: Staff Feed (Top/Bottom chat + alerts)
- *  ========================= */
-export function loadStaffFeed() {
-  return loadList(LS_KEY_STAFF_FEED);
-}
-
-export function saveStaffFeed(feed) {
-  saveList(LS_KEY_STAFF_FEED, feed, "STAFF_FEED_UPDATED");
-}
-
-export function addStaffMessage({
-  from,
-  to = "all",
-  severity = "info",
-  text,
-  entryId = null,
-}) {
-  const msg = {
-    id: uid(),
-    createdAt: Date.now(),
-    from: from === "top" ? "top" : "bottom",
-    to: to === "top" || to === "bottom" || to === "all" ? to : "all",
-    severity: severity === "alert" ? "alert" : "info",
-    text: clampText(text, LIMITS.staffMessageText),
-    entryId: entryId ? String(entryId) : null,
-  };
-
-  const feed = loadStaffFeed();
-  saveStaffFeed([msg, ...feed]);
-  return msg;
-}
-
-/** =========================
- *  NEW: Public Announcements (Client TV)
- *  ========================= */
-export function loadPublicAnnouncements() {
-  return loadList(LS_KEY_PUBLIC_ANNOUNCEMENTS);
-}
-
-export function savePublicAnnouncements(list) {
-  saveList(LS_KEY_PUBLIC_ANNOUNCEMENTS, list, "PUBLIC_ANNOUNCEMENTS_UPDATED");
-}
-
-export function addPublicAnnouncement({
-  text,
-  level = "info",
-  expiresAt = null,
-}) {
-  const a = {
-    id: uid(),
-    createdAt: Date.now(),
-    text: clampText(text, LIMITS.publicAnnouncementText),
-    level: level === "warning" ? "warning" : "info",
-    isActive: true,
-    expiresAt: expiresAt ? Number(expiresAt) : null,
-  };
-
-  const list = loadPublicAnnouncements();
-  savePublicAnnouncements([a, ...list]);
-  return a;
-}
-
-export function dismissPublicAnnouncement(id) {
-  const list = loadPublicAnnouncements();
-  const next = list.map((a) => (a.id === id ? { ...a, isActive: false } : a));
-  savePublicAnnouncements(next);
+export function deleteNotesForEntry(entryId) {
+  const id = String(entryId);
+  const notes = loadGuestNotes();
+  const next = notes.filter((n) => String(n.entryId) !== id);
+  saveGuestNotes(next);
   return next;
+}
+
+/** =========================
+ *  Flag Archive (problem groups)
+ *  ========================= */
+
+export function loadFlagArchive() {
+  return loadList(LS_KEY_FLAG_ARCHIVE);
+}
+
+export function saveFlagArchive(list) {
+  saveList(LS_KEY_FLAG_ARCHIVE, list, "FLAG_ARCHIVE_UPDATED");
+}
+
+export function archiveFlaggedEntry({
+  entryId,
+  archivedBy = "top",
+  reason = "",
+  removeFromActive = true,
+  cleanupGuestNotes = false, // set true if you want to prune notes after archiving
+} = {}) {
+  const entries = loadEntries();
+  const { entries: normalized } = normalizeEntries(entries);
+
+  const target = normalized.find((e) => e && e.id === entryId);
+  if (!target) return null;
+
+  const guestNotes = getNotesForEntry(entryId);
+
+  const record = {
+    id: uid(),
+    archivedAt: Date.now(),
+    archivedBy: archivedBy === "bottom" ? "bottom" : "top",
+    reason: clampText(reason, LIMITS.archiveReasonText).trim(),
+    entrySnapshot: {
+      id: String(target.id),
+      name: clampText(String(target.name ?? ""), LIMITS.entryName).trim(),
+      phone: clampText(String(target.phone ?? ""), LIMITS.entryPhone).trim(),
+      partySize: Math.max(1, Number(target.partySize || 1)),
+      notes: clampText(
+        String(target.notes ?? ""),
+        LIMITS.entryIntakeNotes,
+      ).trim(),
+      status: String(target.status ?? ""),
+      createdAt: target.createdAt ?? null,
+      sentUpAt: target.sentUpAt ?? null,
+      startedAt: target.startedAt ?? null,
+      assignedTag: target.assignedTag ?? null,
+    },
+    guestNotes: Array.isArray(guestNotes) ? guestNotes : [],
+  };
+
+  const list = loadFlagArchive();
+  saveFlagArchive([record, ...list]);
+
+  if (removeFromActive) {
+    const nextEntries = normalized.filter((e) => e.id !== entryId);
+    saveEntries(nextEntries);
+  }
+
+  if (cleanupGuestNotes) {
+    deleteNotesForEntry(entryId);
+  }
+
+  stampAll("FLAG_ARCHIVED");
+  return record;
+}
+
+export function deleteArchiveRecord(recordId) {
+  const list = loadFlagArchive();
+  const next = list.filter((r) => r && r.id !== recordId);
+  saveFlagArchive(next);
+  return next;
+}
+
+/** =========================
+ *  Merge (Top "Coming Up Now")
+ *  ========================= */
+
+export function mergeEntries(
+  primaryId,
+  secondaryId,
+  { mergedBy = "top" } = {},
+) {
+  const aId = String(primaryId || "");
+  const bId = String(secondaryId || "");
+  if (!aId || !bId || aId === bId) return loadEntries();
+
+  const entries = loadEntries();
+  const { entries: normalized } = normalizeEntries(entries);
+
+  const a = normalized.find((e) => e.id === aId);
+  const b = normalized.find((e) => e.id === bId);
+  if (!a || !b) return normalized;
+
+  // Only merge "Coming Up" groups (SENT phase)
+  const aPhase = String(a.coursePhase || "").toUpperCase();
+  const bPhase = String(b.coursePhase || "").toUpperCase();
+  if (aPhase !== "SENT" || bPhase !== "SENT") return normalized;
+
+  const aSize = Math.max(1, Number(a.partySize || 1));
+  const bSize = Math.max(1, Number(b.partySize || 1));
+  const mergedPartySize = aSize + bSize;
+
+  const aName = String(a.name || "").trim();
+  const bName = String(b.name || "").trim();
+  const mergedName = clampText(`${aName} + ${bName}`.trim(), LIMITS.entryName);
+
+  const mergedPhone = clampText(
+    (String(a.phone || "").trim() || String(b.phone || "").trim() || "").trim(),
+    LIMITS.entryPhone,
+  );
+
+  // Tag logic:
+  // - keep primary tag if set
+  // - else take secondary tag
+  // - if both exist but differ: clear to force re-select
+  let assignedTag = a.assignedTag ?? null;
+  if (!assignedTag && b.assignedTag) assignedTag = b.assignedTag;
+  if (a.assignedTag && b.assignedTag && a.assignedTag !== b.assignedTag) {
+    assignedTag = null;
+  }
+
+  const mergedNotesParts = [
+    String(a.notes || "").trim(),
+    String(b.notes || "").trim()
+      ? `Merged: ${String(b.notes || "").trim()}`
+      : "",
+    `Merged by ${mergedBy === "bottom" ? "bottom" : "top"}`,
+  ].filter(Boolean);
+
+  const mergedNotes = clampText(
+    mergedNotesParts.join(" • "),
+    LIMITS.entryIntakeNotes,
+  );
+
+  // pick earliest sent time for display ordering
+  const aSent = new Date(
+    a.sentUpAt || a.startedAt || a.createdAt || 0,
+  ).getTime();
+  const bSent = new Date(
+    b.sentUpAt || b.startedAt || b.createdAt || 0,
+  ).getTime();
+  const earliestSentUpAt =
+    (Number.isFinite(aSent) ? aSent : 0) <= (Number.isFinite(bSent) ? bSent : 0)
+      ? a.sentUpAt || a.startedAt || a.createdAt || null
+      : b.sentUpAt || b.startedAt || b.createdAt || null;
+
+  const nextEntries = normalized
+    .map((e) => {
+      if (e.id !== aId) return e;
+      return {
+        ...e,
+        name: mergedName,
+        phone: mergedPhone,
+        partySize: mergedPartySize,
+        notes: mergedNotes,
+        assignedTag,
+        sentUpAt: earliestSentUpAt ?? e.sentUpAt ?? null,
+        // reserve combined lines while they walk up
+        linesUsed: mergedPartySize,
+      };
+    })
+    .filter((e) => e.id !== bId);
+
+  saveEntries(nextEntries);
+
+  // Move guest notes from secondary entryId -> primary entryId
+  const notes = loadGuestNotes();
+  const moved = notes.map((n) => {
+    if (!n) return n;
+    if (String(n.entryId) !== bId) return n;
+    return { ...n, entryId: aId };
+  });
+  saveGuestNotes(moved);
+
+  stampAll("ENTRIES_MERGED");
+  return nextEntries;
 }
 
 /* =========================
@@ -525,17 +650,20 @@ export function normalizeEntry(e) {
   if (!e || typeof e !== "object") return e;
 
   const status = String(e.status || "").toUpperCase();
-  const partyLines = Math.max(1, Number(e.partySize || 1));
+
+  // partySize as int >= 1
+  const partyLines = Math.max(1, Math.trunc(Number(e.partySize || 1)) || 1);
 
   return {
     ...e,
+    partySize: partyLines,
     assignedTag: e.assignedTag ?? null,
     endedEarlyAt: e.endedEarlyAt ?? null,
     timeAdjustMin: Number.isFinite(Number(e.timeAdjustMin))
       ? Number(e.timeAdjustMin)
       : 0,
 
-    // ✅ safety net: if it's UP but missing linesUsed, infer from partySize
+    // if it's UP but missing linesUsed, infer from partySize
     ...(status === "UP" && !Number.isFinite(Number(e.linesUsed))
       ? { linesUsed: partyLines }
       : {}),
@@ -544,34 +672,19 @@ export function normalizeEntry(e) {
 
 export function normalizeEntries(list) {
   const arr = Array.isArray(list) ? list : [];
-  let changed = false;
-  const next = arr.map((e) => {
-    const ne = normalizeEntry(e);
-    // Detect if we added defaults
-    if (
-      (e?.assignedTag ?? null) !== ne.assignedTag ||
-      (e?.endedEarlyAt ?? null) !== ne.endedEarlyAt ||
-      Number(e?.timeAdjustMin ?? 0) !== ne.timeAdjustMin
-    ) {
-      changed = true;
-    }
-    return ne;
-  });
-  return { entries: next, changed };
+  const next = arr.map((e) => normalizeEntry(e));
+  return { entries: next, changed: false };
 }
 
 export function patchEntry(entryId, patch) {
   const entries = loadEntries();
-  const { entries: normalized, changed } = normalizeEntries(entries);
+  const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) =>
     e.id === entryId ? { ...e, ...patch } : e,
   );
 
-  // If normalization changed anything, we still want to persist
-  if (changed || next !== normalized) saveEntries(next);
-  else saveEntries(next);
-
+  saveEntries(next);
   return next;
 }
 
@@ -581,8 +694,6 @@ export function setEntryStatus(entryId, status) {
 
 export function startEntry(entryId, durationMin) {
   const now = Date.now();
-
-  // 🔒 HARD SOURCE OF TRUTH
   const settings = loadSettings();
 
   const dur =
@@ -593,15 +704,13 @@ export function startEntry(entryId, durationMin) {
   const startedAtISO = new Date(now).toISOString();
   const endTimeISO = new Date(now + dur * 60 * 1000).toISOString();
 
-  console.log("[startEntry] duration used:", dur); // 👈 DEBUG, KEEP FOR NOW
-
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) => {
     if (e.id !== entryId) return e;
 
-    const linesNeeded = Math.max(1, Number(e.partySize || 1));
+    const linesNeeded = Math.max(1, Math.trunc(Number(e.partySize || 1)) || 1);
 
     return {
       ...e,
@@ -633,6 +742,7 @@ export function extendEntryByMinutes(entryId, addMin) {
     const newEnd = new Date(
       currentEnd.getTime() + add * 60 * 1000,
     ).toISOString();
+
     return {
       ...e,
       endTime: newEnd,
@@ -656,11 +766,10 @@ export function markEntryDone(entryId) {
 }
 
 export function sendUpEntry(entryId) {
-  const nextEntries = patchEntry(entryId, {
+  return patchEntry(entryId, {
     status: "STAGING",
     sentUpAt: new Date().toISOString(),
   });
-  return nextEntries;
 }
 
 export function startTopCourse(entryId, topDurationMin) {
@@ -675,7 +784,7 @@ export function startTopCourse(entryId, topDurationMin) {
   const next = normalized.map((e) => {
     if (e.id !== entryId) return e;
 
-    const linesNeeded = Math.max(1, Number(e.partySize || 1));
+    const linesNeeded = Math.max(1, Math.trunc(Number(e.partySize || 1)) || 1);
 
     return {
       ...e,

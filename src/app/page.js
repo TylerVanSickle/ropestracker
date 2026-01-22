@@ -12,15 +12,13 @@ import {
   archiveToday,
   loadStaffAuthedAt,
   setStaffAuthedNow,
-
-  // ✅ NEW: consistent sanitization + limits
   LIMITS,
   clampText,
   clampInt,
+  digitsOnlyMax,
 } from "@/app/lib/ropesStore";
 
 import Topbar from "@/app/components/ropes/Topbar";
-import CallNowBanner from "@/app/components/ropes/CallNowBanner";
 import QuickQuote from "@/app/components/ropes/QuickQuote";
 import AddGuestForm from "@/app/components/ropes/AddGuestForm";
 import UpNowList from "@/app/components/ropes/UpNowList";
@@ -37,36 +35,25 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
-function digitsOnlyMax(s, maxDigits) {
-  const raw = String(s ?? "");
-  const digits = raw.replace(/\D/g, "");
-  return digits.slice(0, maxDigits);
-}
-
 function isPinValid(input, pin) {
-  // ✅ compare digits-only so UI + store match behavior
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
   const b = digitsOnlyMax(pin, LIMITS.staffPinMaxDigits);
   return !!b && a === b;
 }
 
 export default function Home() {
-  // IMPORTANT: settings should update when changed in /settings
   const [settings, setSettings] = useState(() => loadSettings());
-
   const [entries, setEntries] = useState(() => ensureQueueOrder(loadEntries()));
   const [now, setNow] = useState(() => new Date());
 
-  // Undo stack persisted
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
 
   // PIN gate
   const [authed, setAuthed] = useState(() => {
     const s = loadSettings();
     const pin = String(s.staffPin || "").trim();
-    if (!pin) return true; // no pin set
+    if (!pin) return true;
     const at = loadStaffAuthedAt();
-    // keep it simple: if authed at exists, we’re in
     return !!at;
   });
   const [pinInput, setPinInput] = useState("");
@@ -81,7 +68,6 @@ export default function Home() {
   const [quoteSizeInput, setQuoteSizeInput] = useState("1");
   const [editingId, setEditingId] = useState(null);
 
-  // keep settings + entries synced across tabs
   const refreshFromStorage = () => {
     setSettings(loadSettings());
     setEntries(ensureQueueOrder(loadEntries()));
@@ -94,7 +80,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // tick + auto-complete expired runs inside interval callback
+  // tick + auto-complete expired runs
   useEffect(() => {
     const t = setInterval(() => {
       const current = new Date();
@@ -124,12 +110,10 @@ export default function Home() {
     return () => clearInterval(t);
   }, []);
 
-  // persist entries (but DO NOT push undo here)
   useEffect(() => {
     saveEntries(entries);
   }, [entries]);
 
-  // push undo snapshot before user actions
   function pushUndoSnapshot(prevEntries) {
     const snap = {
       at: new Date().toISOString(),
@@ -154,7 +138,6 @@ export default function Home() {
     });
   }
 
-  // derived lists
   const waiting = useMemo(() => {
     return entries
       .filter((e) => e.status === "WAITING")
@@ -175,7 +158,6 @@ export default function Home() {
     : null;
   const nextCanStartNow = nextWaiting ? availableLines >= nextNeeds : false;
 
-  // estimates (strict order)
   const estimateMap = useMemo(() => {
     return computeEstimates({
       totalLines: settings.totalLines,
@@ -265,7 +247,6 @@ export default function Home() {
   function addGuest(e) {
     e.preventDefault();
 
-    // ✅ DB-ready sanitization at save time (source of truth)
     const name = clampText(newGuest.name, LIMITS.entryName).trim();
     if (!name) return;
 
@@ -296,7 +277,6 @@ export default function Home() {
   }
 
   function startGroup(id) {
-    // startGroup is now "Send Up" (reserve lines + show on /top as Coming Up Now)
     const HOLD_MIN = settings.durationMin;
 
     setEntries((prev) => {
@@ -344,12 +324,10 @@ export default function Home() {
         return {
           ...e,
           status: "UP",
-          linesUsed: linesNeeded, // IMPORTANT for staff math
-          startedAt: nowISO, // ok to set (means "sent up at" for now)
-          sentUpAt: nowISO, // NEW field used by /top
-          coursePhase: "SENT", // NEW field used by /top
-
-          // SHORT HOLD so computeEstimates stays accurate while they’re walking up
+          linesUsed: linesNeeded,
+          startedAt: nowISO,
+          sentUpAt: nowISO,
+          coursePhase: "SENT",
           endTime: minutesFromNow(HOLD_MIN),
         };
       });
@@ -360,13 +338,6 @@ export default function Home() {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
       return prev.map((e) => (e.id === id ? { ...e, status: "DONE" } : e));
-    });
-  }
-
-  function noShow(id) {
-    setEntries((prev) => {
-      pushUndoSnapshot(prev);
-      return prev.map((e) => (e.id === id ? { ...e, status: "NOSHOW" } : e));
     });
   }
 
@@ -439,7 +410,6 @@ export default function Home() {
     window.open("/print", "_blank", "noopener,noreferrer");
   }
 
-  // PIN gate UI (if enabled)
   const staffPin = String(settings.staffPin || "").trim();
   const requiresPin = !!staffPin;
 
@@ -459,7 +429,6 @@ export default function Home() {
 
     alert("Wrong PIN.");
     setPinInput("");
-    // send them to public display if they can’t access staff tools
     window.location.href = "/client";
   }
 
@@ -524,20 +493,8 @@ export default function Home() {
         onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
         onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
         onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
-        onNoShow={() => (nextWaiting ? noShow(nextWaiting.id) : null)}
         onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
       />
-
-      {/* 
-      <CallNowBanner
-        nextWaiting={nextWaiting}
-        nextNeeds={nextNeeds}
-        nextCanStartNow={nextCanStartNow}
-        nextEstStartText={nextEstStartText}
-        nextWaitRange={nextWaitRange}
-        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
-        onStartNext={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
-      /> */}
 
       <QuickQuote
         quoteSizeInput={quoteSizeInput}
@@ -570,7 +527,6 @@ export default function Home() {
           onMoveDown={(id) => moveWaiting(id, "DOWN")}
           onNotify={(entry) => notifyGuest(entry)}
           onStart={startGroup}
-          onNoShow={noShow}
           onRemove={remove}
         />
       </section>

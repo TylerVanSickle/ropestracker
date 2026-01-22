@@ -12,11 +12,15 @@ import {
   extendEntryByMinutes,
   endEntryEarly,
   markEntryDone,
+  formatTime,
+  archiveFlaggedEntry,
+  mergeEntries,
 } from "@/app/lib/ropesStore";
 
 import { COURSE_TAGS } from "../lib/ropesTags";
 import { ensureQueueOrder } from "@/app/lib/ropesUtils";
-import { formatTime } from "@/app/lib/ropesStore";
+
+import ArchiveModal from "@/app/components/ropes/ArchiveModal";
 
 function minutesLeft(endTimeISO) {
   if (!endTimeISO) return null;
@@ -31,7 +35,7 @@ function isoPlusMinutes(mins) {
 }
 
 function getAvailableTags(up, allTags) {
-  const used = new Set((up || []).map((e) => e.assignedTag).filter(Boolean));
+  const used = new Set((up || []).map((x) => x.assignedTag).filter(Boolean));
   return (allTags || []).filter((t) => !used.has(t));
 }
 
@@ -54,7 +58,6 @@ function getDerived(entriesRaw, settings) {
     return ao - bo;
   });
 
-  // Available lines (same general approach as your other pages)
   const totalLines = Math.max(0, Number(settings?.totalLines ?? 0));
   const now = Date.now();
 
@@ -69,28 +72,26 @@ function getDerived(entriesRaw, settings) {
 
   const availableLines = Math.max(0, totalLines - used);
 
-  // SENT (coming up)
   const sentUp = up
     .filter((e) => String(e.coursePhase || "").toUpperCase() === "SENT")
     .sort((a, b) => {
       const ao = new Date(
-        a.sentUpAt || a.startedAt || a.createdAt || 0
+        a.sentUpAt || a.startedAt || a.createdAt || 0,
       ).getTime();
       const bo = new Date(
-        b.sentUpAt || b.startedAt || b.createdAt || 0
+        b.sentUpAt || b.startedAt || b.createdAt || 0,
       ).getTime();
       return ao - bo;
     });
 
-  // ON_COURSE (or legacy UP groups without a phase)
   const onCourse = up
     .filter((e) => String(e.coursePhase || "").toUpperCase() !== "SENT")
     .sort((a, b) => {
       const ao = new Date(
-        a.startTime || a.startedAt || a.createdAt || 0
+        a.startTime || a.startedAt || a.createdAt || 0,
       ).getTime();
       const bo = new Date(
-        b.startTime || b.startedAt || b.createdAt || 0
+        b.startTime || b.startedAt || b.createdAt || 0,
       ).getTime();
       return ao - bo;
     });
@@ -102,11 +103,10 @@ export default function TopRopesPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [entries, setEntries] = useState(() => loadEntries());
 
-  // toggles so lists don’t feel cramped or empty
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showAllSent, setShowAllSent] = useState(false);
 
-  // edit modal state
+  // Edit modal state
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({
     name: "",
@@ -114,6 +114,13 @@ export default function TopRopesPage() {
     phone: "",
     notes: "",
   });
+
+  // Merge selection (SENT only)
+  const [mergeIds, setMergeIds] = useState([]); // up to 2 ids
+
+  // Archive modal state
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveEntry, setArchiveEntry] = useState(null);
 
   useEffect(() => {
     const unsub = subscribeToRopesStorage(() => {
@@ -132,7 +139,7 @@ export default function TopRopesPage() {
 
   const derived = useMemo(
     () => getDerived(entries, settings),
-    [entries, settings]
+    [entries, settings],
   );
   const { waiting, up, sentUp, onCourse, availableLines, totalLines } = derived;
 
@@ -140,7 +147,7 @@ export default function TopRopesPage() {
 
   const availableTagsGlobal = useMemo(
     () => getAvailableTags(up, COURSE_TAGS),
-    [up]
+    [up],
   );
 
   function setLocalEntries(nextEntries) {
@@ -219,7 +226,7 @@ export default function TopRopesPage() {
       .slice(0, 40);
     const partySizeNum = Math.max(
       1,
-      Math.min(15, Number(editDraft.partySize || 1))
+      Math.min(15, Number(editDraft.partySize || 1)),
     );
     const phone = String(editDraft.phone || "")
       .trim()
@@ -242,10 +249,87 @@ export default function TopRopesPage() {
   const waitingPreview = showAllWaiting ? waiting : waiting.slice(0, 8);
   const sentPreview = showAllSent ? sentUp : sentUp.slice(0, 5);
 
-  // status strip numbers
   const sentCount = sentUp.length;
   const courseCount = onCourse.length;
   const waitingCount = waiting.length;
+
+  // ===== Merge =====
+  function toggleMergeSelect(entryId) {
+    setMergeIds((prev) => {
+      const has = prev.includes(entryId);
+      if (has) return prev.filter((id) => id !== entryId);
+      if (prev.length >= 2) return [prev[1], entryId];
+      return [...prev, entryId];
+    });
+  }
+
+  function clearMerge() {
+    setMergeIds([]);
+  }
+
+  function doMergeSelected() {
+    if (mergeIds.length !== 2) return;
+
+    const primaryId = mergeIds[0];
+    const secondaryId = mergeIds[1];
+
+    const a = sentUp.find((x) => x.id === primaryId);
+    const b = sentUp.find((x) => x.id === secondaryId);
+
+    if (!a || !b) {
+      alert("Merge only works for Coming Up groups.");
+      clearMerge();
+      return;
+    }
+
+    const ok = confirm(
+      `Merge these groups?\n\n1) ${a.name} (${a.partySize || 1})\n2) ${b.name} (${b.partySize || 1})\n\nThis will combine them into one group.`,
+    );
+    if (!ok) return;
+
+    const nextEntries = mergeEntries(primaryId, secondaryId, {
+      mergedBy: "top",
+    });
+    setLocalEntries(nextEntries);
+    clearMerge();
+  }
+
+  // ===== Archive Modal =====
+  function openArchive(entry) {
+    setArchiveEntry(entry);
+    setArchiveOpen(true);
+  }
+
+  function closeArchive() {
+    setArchiveOpen(false);
+    setArchiveEntry(null);
+  }
+
+  function handleArchiveSubmit({ reason, note, mode }) {
+    if (!archiveEntry) return;
+
+    const r = String(reason || "").trim();
+    const n = String(note || "").trim();
+    if (r.length < 3) {
+      alert("Please enter a short reason.");
+      return;
+    }
+
+    const combined = n ? `${r} • Note: ${n}` : r;
+    const removeFromActive = String(mode) !== "KEEP";
+
+    archiveFlaggedEntry({
+      entryId: archiveEntry.id,
+      archivedBy: "top",
+      reason: combined,
+      removeFromActive,
+    });
+
+    // cleanup merge selection
+    setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
+
+    closeArchive();
+  }
 
   return (
     <main className="page" style={{ padding: "14px 14px 28px" }}>
@@ -266,16 +350,19 @@ export default function TopRopesPage() {
             <Link className="button" href="/">
               Bottom
             </Link>
-            <Link className="button" href="/client">
+            <Link className="button" href="/client" target="_blank">
               Client Display
             </Link>
-            <Link className="button" href="/settings">
+            <Link className="button" href="/archive" target="_blank">
+              Archive
+            </Link>
+            <Link className="button" href="/settings" target="_blank">
               Settings
             </Link>
           </div>
         </div>
 
-        {/* Status strip (fills the page nicely + useful) */}
+        {/* Status strip */}
         <div
           className="card"
           style={{
@@ -329,7 +416,9 @@ export default function TopRopesPage() {
             <div className="muted" style={{ fontSize: 12 }}>
               Course Timer
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>35 min</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {Number(settings?.topDurationMin ?? 35)} min
+            </div>
           </div>
         </div>
 
@@ -376,7 +465,37 @@ export default function TopRopesPage() {
                 Coming Up Now ({sentUp.length})
               </h2>
 
-              <div className="row" style={{ gap: 10, alignItems: "center" }}>
+              <div
+                className="row"
+                style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}
+              >
+                {mergeIds.length ? (
+                  <span className="pill">Selected: {mergeIds.length}/2</span>
+                ) : null}
+
+                {mergeIds.length === 2 ? (
+                  <>
+                    <button
+                      className="button button-primary"
+                      type="button"
+                      onClick={doMergeSelected}
+                    >
+                      Merge Selected
+                    </button>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={clearMerge}
+                    >
+                      Clear
+                    </button>
+                  </>
+                ) : mergeIds.length === 1 ? (
+                  <button className="button" type="button" onClick={clearMerge}>
+                    Clear
+                  </button>
+                ) : null}
+
                 {sentUp.length > 5 ? (
                   <button
                     className="button"
@@ -387,6 +506,10 @@ export default function TopRopesPage() {
                   </button>
                 ) : null}
               </div>
+            </div>
+
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              Tip: Select 2 groups to merge if desk sent them up together.
             </div>
 
             {sentUp.length === 0 ? (
@@ -404,12 +527,18 @@ export default function TopRopesPage() {
                 {sentPreview.map((e) => {
                   const needs = Math.max(1, Number(e.partySize || 1));
                   const tagOptions = tagOptionsForEntry(e);
+                  const selected = mergeIds.includes(e.id);
 
                   return (
                     <div
                       key={e.id}
                       className="item item-next"
-                      style={{ padding: 14 }}
+                      style={{
+                        padding: 14,
+                        outline: selected
+                          ? "2px solid var(--accent, #6aa9ff)"
+                          : "none",
+                      }}
                     >
                       <div className="item-main">
                         <div className="item-title" style={{ fontSize: 18 }}>
@@ -418,7 +547,11 @@ export default function TopRopesPage() {
                           {e.assignedTag ? (
                             <span className="pill">{e.assignedTag}</span>
                           ) : null}
+                          {selected ? (
+                            <span className="pill">SELECTED</span>
+                          ) : null}
                         </div>
+
                         {e.notes ? (
                           <div className="item-notes">📝 {e.notes}</div>
                         ) : null}
@@ -436,6 +569,14 @@ export default function TopRopesPage() {
                             flexWrap: "wrap",
                           }}
                         >
+                          <button
+                            className="button"
+                            type="button"
+                            onClick={() => toggleMergeSelect(e.id)}
+                          >
+                            {selected ? "Unselect" : "Select"}
+                          </button>
+
                           <label className="muted" style={{ fontSize: 13 }}>
                             Group Tag (required):
                           </label>
@@ -484,7 +625,8 @@ export default function TopRopesPage() {
                           type="button"
                           style={{ padding: "10px 14px" }}
                         >
-                          Start Course (35)
+                          Start Course ({Number(settings?.topDurationMin ?? 35)}
+                          )
                         </button>
 
                         <button
@@ -501,6 +643,14 @@ export default function TopRopesPage() {
                           type="button"
                         >
                           Done
+                        </button>
+
+                        <button
+                          className="button"
+                          onClick={() => openArchive(e)}
+                          type="button"
+                        >
+                          Flag & Archive
                         </button>
                       </div>
                     </div>
@@ -520,7 +670,7 @@ export default function TopRopesPage() {
                 On Course ({onCourse.length})
               </h2>
               <span className="muted" style={{ fontSize: 13 }}>
-                +5 / End Early / Done / Edit
+                +5 / End Early / Done / Edit / Archive
               </span>
             </div>
 
@@ -543,8 +693,8 @@ export default function TopRopesPage() {
                     left == null
                       ? "—"
                       : left >= 0
-                      ? `${left} min left`
-                      : `${Math.abs(left)} min overdue`;
+                        ? `${left} min left`
+                        : `${Math.abs(left)} min overdue`;
 
                   return (
                     <div key={e.id} className="item" style={{ padding: 14 }}>
@@ -564,6 +714,12 @@ export default function TopRopesPage() {
                             <> • Adjusted: +{Number(e.timeAdjustMin || 0)}m</>
                           ) : null}
                         </div>
+
+                        {e.notes ? (
+                          <div className="item-notes" style={{ marginTop: 8 }}>
+                            📝 {e.notes}
+                          </div>
+                        ) : null}
                       </div>
 
                       <div
@@ -597,6 +753,13 @@ export default function TopRopesPage() {
                           type="button"
                         >
                           Edit
+                        </button>
+                        <button
+                          className="button"
+                          onClick={() => openArchive(e)}
+                          type="button"
+                        >
+                          Flag & Archive
                         </button>
                       </div>
                     </div>
@@ -662,8 +825,7 @@ export default function TopRopesPage() {
             )}
           </section>
 
-          {/* Helper card (fills space + clarifies workflow) */}
-          {/* Operator Notes (collapsible, bottom-right) */}
+          {/* Operator Notes */}
           <section className="card">
             <details>
               <summary
@@ -682,7 +844,7 @@ export default function TopRopesPage() {
                     Operator Notes
                   </h2>
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                    Tap to expand (workflow + fixes)
+                    Tap to expand (workflow + tools)
                   </div>
                 </div>
 
@@ -701,22 +863,33 @@ export default function TopRopesPage() {
                     <br />
                     2) Choose <strong>Group Tag</strong> (required).
                     <br />
-                    3) Press <strong>Start Course</strong> → 35-min timer starts
-                    and moves to <strong>On Course</strong>.
+                    3) Press <strong>Start Course</strong> → timer starts and
+                    moves to <strong>On Course</strong>.
                   </div>
                 </div>
 
                 <div className="item" style={{ padding: 12, marginTop: 10 }}>
-                  <div style={{ fontWeight: 700 }}>Fixes</div>
+                  <div style={{ fontWeight: 700 }}>Merge</div>
                   <div
                     className="muted"
                     style={{ marginTop: 6, lineHeight: 1.5 }}
                   >
-                    Use <strong>+5</strong> if they need more time.
-                    <br />
-                    Use <strong>End Early</strong> if they come off early.
-                    <br />
-                    Use <strong>Edit</strong> to correct name/lines/notes.
+                    If desk sent two groups up together (ex: 3 + 2), select both
+                    in <strong>Coming Up Now</strong> and tap{" "}
+                    <strong>Merge Selected</strong>.
+                  </div>
+                </div>
+
+                <div className="item" style={{ padding: 12, marginTop: 10 }}>
+                  <div style={{ fontWeight: 700 }}>Flag & Archive</div>
+                  <div
+                    className="muted"
+                    style={{ marginTop: 6, lineHeight: 1.5 }}
+                  >
+                    Use <strong>Flag & Archive</strong> if a group is
+                    disrespectful. It saves a record in{" "}
+                    <strong>/archive</strong>. You can choose whether to remove
+                    them from the active lists.
                   </div>
                 </div>
 
@@ -735,6 +908,14 @@ export default function TopRopesPage() {
           </section>
         </div>
       </div>
+
+      {/* Archive Modal */}
+      <ArchiveModal
+        open={archiveOpen}
+        entry={archiveEntry}
+        onClose={closeArchive}
+        onSubmit={handleArchiveSubmit}
+      />
 
       {/* Edit Modal */}
       {editingId ? (
