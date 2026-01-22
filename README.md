@@ -1,37 +1,37 @@
 # Ropes Tracker
 
-Ropes Tracker is an internal web application built specifically to support **day-to-day operations at our ropes course**.
+Ropes Tracker is an internal web application built specifically to support **day to day operations at our ropes course**.
 
-It is designed to help front desk staff and top-ropes operators manage guest flow, sling line capacity, and wait times in a clear, consistent, and fair way during normal drop-in operations.
+It helps front desk staff and top-ropes operators manage guest flow, sling line capacity, and wait times in a clear, consistent, and fair way during normal drop-in operations.
 
-This tool is intentionally modeled around **how the course actually runs in real life**, not a generic queue system.
+This tool is intentionally designed around **how the course actually runs in real life**, not a generic queue or ticketing system.
 
 ---
 
 ## Purpose
 
-The goal of Ropes Tracker is to:
+Ropes Tracker exists to:
 
 - Reduce guesswork around wait times
-- Improve communication between staff and guests
+- Improve clarity and consistency for guests
 - Keep sling line usage accurate and visible
-- Prevent line-skipping and confusion during busy periods
-- Provide a single, shared source of truth for operations
+- Prevent line skipping during busy periods
+- Provide a single, shared operational source of truth
 
-The system enforces simple, predictable rules so staff can focus on guests instead of tracking timing and capacity in their heads.
+The system enforces simple, predictable rules so staff can focus on guests instead of mentally tracking timing and capacity.
 
 ---
 
-## Core Concept
+## Core Operational Model
 
-- The course has a fixed number of **sling lines** (configurable in settings)
+- The course has a fixed number of **sling lines** (configurable)
 - Each guest uses **one sling line**
 - A group’s size determines how many sling lines they require
 - Groups move through the system in **strict FIFO order** (First In, First Out)
-- A group can only move forward when enough sling lines are available
-- Timers are started by the **top-ropes operator**, not the front desk
+- A group may only advance when enough sling lines are available
+- Course timers are started by **top ropes operators**, not the front desk
 
-This ensures fairness, safety, and predictable flow across the entire course.
+This mirrors real world operations and ensures fairness, safety, and predictable flow.
 
 ---
 
@@ -39,15 +39,15 @@ This ensures fairness, safety, and predictable flow across the entire course.
 
 ### `/` — Staff / Front Desk View
 
-Used by front desk staff to manage the waitlist and guest communication.
+Used by front desk staff to manage intake, waitlists, and guest communication.
 
-**Key responsibilities:**
+**Primary actions:**
 
 - Add guest groups to the waitlist
 - View realistic wait time estimates
 - Notify the next eligible group
-- Send a group “up” when space is available
-- Edit or remove groups as needed
+- Send a group “up” when capacity allows
+- Edit or remove entries as needed
 
 **Important behavior:**
 
@@ -59,58 +59,58 @@ Used by front desk staff to manage the waitlist and guest communication.
 
 ### `/top` — Top Ropes Operator View
 
-Used by floor operators managing the active course.
+Used by operators actively managing the course floor.
 
-**Key responsibilities:**
+**Primary actions:**
 
-- See all groups that are coming up
-- Assign each group a predefined **animal/color identifier**
-- Start a group’s course timer when they physically load
-- End groups early or extend time as needed
-- Mark groups done to immediately free sling lines
+- View groups that are coming up
+- Assign each group a predefined **animal / color identifier**
+- Start a group’s course timer once they physically load
+- Extend time, end early, or mark groups done
+- Free sling lines immediately when a group finishes
 
 **Important behavior:**
 
-- Operators must select a group identifier before starting a group
-- Starting a group uses a **separate course duration** (default: 35 minutes)
+- A group identifier is required before starting a course
+- Operators use a **separate course duration** (default: 35 minutes)
 - Only operators can place a group **On Course**
 
-This mirrors real operations and prevents accidental timing errors.
+This prevents accidental timing errors and reflects real operator responsibility.
 
 ---
 
 ### `/client` — Public Display View
 
-A read-only display intended for TVs or guest phones.
+A read only display intended for TVs or guest phones.
 
-**Shows:**
+**Displays:**
 
-- Whether the course is open or closed
+- Open / Closed status
 - The next group up
-- Approximate wait times for a small number of upcoming groups
+- Approximate wait times for upcoming groups
 - General estimates for common group sizes
 
-**Does NOT show:**
+**Does NOT display:**
 
 - Phone numbers
 - Internal notes
 - Sling line counts
-- Group identifiers or staff actions
+- Group identifiers or staff controls
 
-This reduces repeated guest questions and keeps expectations clear.
+This reduces repeated guest questions while keeping expectations clear.
 
 ---
 
 ## Queue & Fairness Rules
 
-Ropes Tracker enforces **FIFO (First In, First Out)** ordering.
+Ropes Tracker strictly enforces **FIFO (First In, First Out)** ordering.
 
-- Every waiting group is assigned a stable `queueOrder`
-- The system always processes the earliest group first
+- Each group is assigned a stable `queueOrder`
+- The system always processes the earliest eligible group
 - Groups cannot be accidentally skipped
-- Reordering is explicit and controlled
+- Any reordering is explicit and intentional
 
-This guarantees fairness and avoids confusion during peak traffic.
+This guarantees fairness and consistency during peak traffic.
 
 ---
 
@@ -118,50 +118,50 @@ This guarantees fairness and avoids confusion during peak traffic.
 
 - Sling line usage is tracked live
 - Lines are reserved when a group is placed on course
-- Lines are automatically released when:
+- Lines are released automatically when:
   - A timer expires
   - A group is ended early
   - A group is marked done
-- Wait time estimates update immediately across all screens
+- Wait time estimates update instantly across all screens
 
 ---
 
 ## Settings
 
-Configurable from `/settings`:
+Configurable via `/settings`:
 
 - Total sling lines available
 - Default session duration (front desk estimates)
-- Top-ropes course duration (operator timer)
+- Top ropes course duration (operator timer)
 - Open / Closed status
 - Venue display name
 - Public display theme
 - Optional staff PIN for access control
 
-All settings apply instantly on the same device.
+All changes apply immediately on the same device.
 
 ---
 
 ## Technical Notes
 
 - Built with **Next.js (App Router)**
-- Fully client-side (no backend or database)
+- Fully client side (no backend or database)
 - Uses `localStorage` for persistence
-- Uses `BroadcastChannel` and `storage` events for same-device syncing
-- Modular React components
+- Uses `BroadcastChannel` and `storage` events for same device sync
+- Modular React component architecture
 - Designed for tablets, desktops, and wall displays
 
-This allows the system to run offline and without IT infrastructure.
+This allows the system to run offline and without external infrastructure.
 
 ---
 
 ## Current Limitations
 
 - State is shared **only on the same device** (tabs/windows)
-- Multiple physical devices do not sync yet
+- Multiple physical devices do not sync
 - No external database or authentication system
 
-The codebase is intentionally structured so a backend can be added later if desired.
+The codebase is intentionally structured so a backend can be added later if needed.
 
 ---
 
