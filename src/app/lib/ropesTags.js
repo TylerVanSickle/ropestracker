@@ -8,5 +8,5 @@ export const COURSE_TAGS = [
   "Pink Panthers",
   "Brown Koalas",
   "Black Jaguar",
-  "Maroon Orangutan",
+  "Burgundy Orangutan",
 ];
