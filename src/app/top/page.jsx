@@ -419,6 +419,9 @@ export default function TopRopesPage() {
                             <span className="pill">{e.assignedTag}</span>
                           ) : null}
                         </div>
+                        {e.notes ? (
+                          <div className="item-notes">📝 {e.notes}</div>
+                        ) : null}
 
                         <div className="muted item-sub">
                           Sent up: {e.sentUpAt ? formatTime(e.sentUpAt) : "—"}

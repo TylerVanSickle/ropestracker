@@ -96,6 +96,7 @@ export default function WaitlingList({
                   {e.notes ? (
                     <div className="item-notes">📝 {e.notes}</div>
                   ) : null}
+                  
                 </div>
 
                 <div className="item-actions">
