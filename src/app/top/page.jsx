@@ -264,7 +264,7 @@ export default function TopRopesPage() {
 
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <Link className="button" href="/">
-              Staff
+              Bottom
             </Link>
             <Link className="button" href="/client">
               Client Display
