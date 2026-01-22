@@ -11,6 +11,53 @@ export const LS_KEY_AUTH = "ropes_staff_authed_v1";
 // archives: ropes_archive_YYYY-MM-DD
 export const LS_KEY_ARCHIVE_PREFIX = "ropes_archive_";
 
+/** =========================
+ *  NEW: DB-friendly collections
+ *  ========================= */
+export const LS_KEY_GUEST_NOTES = "ropes_guest_notes_v1";
+export const LS_KEY_STAFF_FEED = "ropes_staff_feed_v1";
+export const LS_KEY_PUBLIC_ANNOUNCEMENTS = "ropes_public_announcements_v1";
+
+/** =========================
+ *  Limits (DB-ready)
+ *  ========================= */
+export const LIMITS = {
+  // entry fields
+  entryName: 80,
+  entryPhone: 24,
+  entryIntakeNotes: 500,
+
+  // collections
+  guestNoteText: 1000,
+  staffMessageText: 400,
+  publicAnnouncementText: 220,
+
+  // settings
+  staffPinMaxDigits: 4,
+};
+
+/** =========================
+ *  Helpers (safe for DB later)
+ *  ========================= */
+export function clampInt(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  const i = Math.trunc(x);
+  return Math.max(min, Math.min(max, i));
+}
+
+export function clampText(value, max) {
+  const s = String(value ?? "");
+  const trimmedStart = s.replace(/^\s+/, "");
+  return trimmedStart.slice(0, max);
+}
+
+function digitsOnlyMax(s, maxDigits) {
+  const raw = String(s ?? "");
+  const digits = raw.replace(/\D/g, "");
+  return digits.slice(0, maxDigits);
+}
+
 const DEFAULT_SETTINGS = {
   totalLines: 15,
   durationMin: 45,
@@ -59,6 +106,31 @@ function stampAll(type) {
   broadcastUpdate(type);
 }
 
+/** =========================
+ *  Generic list helpers
+ *  ========================= */
+function loadList(key) {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveList(key, list, stampType) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.isArray(list) ? list : []));
+    stampAll(stampType);
+  } catch {
+    // ok
+  }
+}
+
 export function loadUpdatedAt() {
   if (typeof window === "undefined") return null;
   try {
@@ -90,28 +162,30 @@ export function loadSettings() {
 
     const totalLines = Math.min(
       MAX_SLING_LINES,
-      Math.max(0, Number(parsed.totalLines ?? DEFAULT_SETTINGS.totalLines))
+      Math.max(0, Number(parsed.totalLines ?? DEFAULT_SETTINGS.totalLines)),
     );
 
     const durationMin = Math.max(
       5,
-      Math.min(180, Number(parsed.durationMin ?? DEFAULT_SETTINGS.durationMin))
+      Math.min(180, Number(parsed.durationMin ?? DEFAULT_SETTINGS.durationMin)),
     );
 
     const topDurationMin = Math.max(
       5,
       Math.min(
         180,
-        Number(parsed.topDurationMin ?? DEFAULT_SETTINGS.topDurationMin)
-      )
+        Number(parsed.topDurationMin ?? DEFAULT_SETTINGS.topDurationMin),
+      ),
     );
 
     const stagingDurationMin = Math.max(
       5,
       Math.min(
         180,
-        Number(parsed.stagingDurationMin ?? DEFAULT_SETTINGS.stagingDurationMin)
-      )
+        Number(
+          parsed.stagingDurationMin ?? DEFAULT_SETTINGS.stagingDurationMin,
+        ),
+      ),
     );
 
     const paused = Boolean(parsed.paused ?? DEFAULT_SETTINGS.paused);
@@ -121,14 +195,16 @@ export function loadSettings() {
       .slice(0, 60);
 
     const t = String(
-      parsed.clientTheme ?? DEFAULT_SETTINGS.clientTheme
+      parsed.clientTheme ?? DEFAULT_SETTINGS.clientTheme,
     ).toLowerCase();
     const clientTheme =
       t === "dark" || t === "light" || t === "auto" ? t : "auto";
 
-    const staffPin = String(parsed.staffPin ?? DEFAULT_SETTINGS.staffPin)
-      .trim()
-      .slice(0, 12);
+    // ✅ PIN: digits only, max 4
+    const staffPin = digitsOnlyMax(
+      parsed.staffPin ?? DEFAULT_SETTINGS.staffPin,
+      LIMITS.staffPinMaxDigits,
+    );
 
     const settings = {
       totalLines,
@@ -185,7 +261,10 @@ export function subscribeToRopesStorage(onChange) {
       e.key === LS_KEY_SETTINGS ||
       e.key === LS_KEY_ENTRIES ||
       e.key === LS_KEY_UPDATED_AT ||
-      e.key === LS_KEY_VERSION
+      e.key === LS_KEY_VERSION ||
+      e.key === LS_KEY_GUEST_NOTES ||
+      e.key === LS_KEY_STAFF_FEED ||
+      e.key === LS_KEY_PUBLIC_ANNOUNCEMENTS
     ) {
       onChange?.();
     }
@@ -228,6 +307,7 @@ export function saveUndoStack(stack) {
     // ok
   }
 }
+
 export function loadStaffAuthedAt() {
   if (typeof window === "undefined") return null;
   try {
@@ -329,6 +409,118 @@ export function formatTime(value) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** =========================
+ *  NEW: Guest Notes (DB-ready)
+ *  ========================= */
+export function loadGuestNotes() {
+  return loadList(LS_KEY_GUEST_NOTES);
+}
+
+export function saveGuestNotes(notes) {
+  saveList(LS_KEY_GUEST_NOTES, notes, "GUEST_NOTES_UPDATED");
+}
+
+export function addGuestNote({
+  entryId,
+  createdBy,
+  text,
+  visibility = "private",
+  kind = "note",
+}) {
+  const note = {
+    id: uid(),
+    entryId: String(entryId),
+    createdAt: Date.now(),
+    createdBy: createdBy === "top" ? "top" : "bottom",
+    visibility: visibility === "public" ? "public" : "private",
+    kind: kind === "alert" ? "alert" : "note",
+    text: clampText(text, LIMITS.guestNoteText),
+  };
+
+  const notes = loadGuestNotes();
+  saveGuestNotes([note, ...notes]);
+  return note;
+}
+
+export function getNotesForEntry(entryId) {
+  const id = String(entryId);
+  return loadGuestNotes().filter((n) => n.entryId === id);
+}
+
+/** =========================
+ *  NEW: Staff Feed (Top/Bottom chat + alerts)
+ *  ========================= */
+export function loadStaffFeed() {
+  return loadList(LS_KEY_STAFF_FEED);
+}
+
+export function saveStaffFeed(feed) {
+  saveList(LS_KEY_STAFF_FEED, feed, "STAFF_FEED_UPDATED");
+}
+
+export function addStaffMessage({
+  from,
+  to = "all",
+  severity = "info",
+  text,
+  entryId = null,
+}) {
+  const msg = {
+    id: uid(),
+    createdAt: Date.now(),
+    from: from === "top" ? "top" : "bottom",
+    to: to === "top" || to === "bottom" || to === "all" ? to : "all",
+    severity: severity === "alert" ? "alert" : "info",
+    text: clampText(text, LIMITS.staffMessageText),
+    entryId: entryId ? String(entryId) : null,
+  };
+
+  const feed = loadStaffFeed();
+  saveStaffFeed([msg, ...feed]);
+  return msg;
+}
+
+/** =========================
+ *  NEW: Public Announcements (Client TV)
+ *  ========================= */
+export function loadPublicAnnouncements() {
+  return loadList(LS_KEY_PUBLIC_ANNOUNCEMENTS);
+}
+
+export function savePublicAnnouncements(list) {
+  saveList(LS_KEY_PUBLIC_ANNOUNCEMENTS, list, "PUBLIC_ANNOUNCEMENTS_UPDATED");
+}
+
+export function addPublicAnnouncement({
+  text,
+  level = "info",
+  expiresAt = null,
+}) {
+  const a = {
+    id: uid(),
+    createdAt: Date.now(),
+    text: clampText(text, LIMITS.publicAnnouncementText),
+    level: level === "warning" ? "warning" : "info",
+    isActive: true,
+    expiresAt: expiresAt ? Number(expiresAt) : null,
+  };
+
+  const list = loadPublicAnnouncements();
+  savePublicAnnouncements([a, ...list]);
+  return a;
+}
+
+export function dismissPublicAnnouncement(id) {
+  const list = loadPublicAnnouncements();
+  const next = list.map((a) => (a.id === id ? { ...a, isActive: false } : a));
+  savePublicAnnouncements(next);
+  return next;
+}
+
+/* =========================
+   Entry normalization / patching
+   ========================= */
+
 export function normalizeEntry(e) {
   if (!e || typeof e !== "object") return e;
 
@@ -373,7 +565,7 @@ export function patchEntry(entryId, patch) {
   const { entries: normalized, changed } = normalizeEntries(entries);
 
   const next = normalized.map((e) =>
-    e.id === entryId ? { ...e, ...patch } : e
+    e.id === entryId ? { ...e, ...patch } : e,
   );
 
   // If normalization changed anything, we still want to persist
@@ -439,7 +631,7 @@ export function extendEntryByMinutes(entryId, addMin) {
     if (!currentEnd || Number.isNaN(currentEnd.getTime())) return e;
 
     const newEnd = new Date(
-      currentEnd.getTime() + add * 60 * 1000
+      currentEnd.getTime() + add * 60 * 1000,
     ).toISOString();
     return {
       ...e,
@@ -462,6 +654,7 @@ export function endEntryEarly(entryId) {
 export function markEntryDone(entryId) {
   return patchEntry(entryId, { status: "DONE" });
 }
+
 export function sendUpEntry(entryId) {
   const nextEntries = patchEntry(entryId, {
     status: "STAGING",

@@ -12,6 +12,11 @@ import {
   archiveToday,
   loadStaffAuthedAt,
   setStaffAuthedNow,
+
+  // ✅ NEW: consistent sanitization + limits
+  LIMITS,
+  clampText,
+  clampInt,
 } from "@/app/lib/ropesStore";
 
 import Topbar from "@/app/components/ropes/Topbar";
@@ -32,9 +37,16 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
+function digitsOnlyMax(s, maxDigits) {
+  const raw = String(s ?? "");
+  const digits = raw.replace(/\D/g, "");
+  return digits.slice(0, maxDigits);
+}
+
 function isPinValid(input, pin) {
-  const a = String(input ?? "").trim();
-  const b = String(pin ?? "").trim();
+  // ✅ compare digits-only so UI + store match behavior
+  const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
+  const b = digitsOnlyMax(pin, LIMITS.staffPinMaxDigits);
   return !!b && a === b;
 }
 
@@ -151,7 +163,7 @@ export default function Home() {
 
   const active = useMemo(
     () => entries.filter((e) => e.status === "UP"),
-    [entries]
+    [entries],
   );
 
   const occupiedLines = active.reduce((sum, e) => sum + (e.linesUsed || 0), 0);
@@ -246,17 +258,22 @@ export default function Home() {
     alert(
       ok
         ? "Notification message copied to clipboard."
-        : "Could not copy message."
+        : "Could not copy message.",
     );
   }
 
   function addGuest(e) {
     e.preventDefault();
-    const name = newGuest.name.trim();
+
+    // ✅ DB-ready sanitization at save time (source of truth)
+    const name = clampText(newGuest.name, LIMITS.entryName).trim();
     if (!name) return;
 
-    const partySize = Math.max(1, Number(newGuest.partySize || 1));
-    const phone = newGuest.phone.trim();
+    const phone = clampText(newGuest.phone, LIMITS.entryPhone).trim();
+    const notes = clampText(newGuest.notes, LIMITS.entryIntakeNotes).trim();
+
+    const maxLines = clampInt(settings.totalLines, 1, 15);
+    const partySize = clampInt(newGuest.partySize || 1, 1, maxLines);
 
     setEntries((prev) => {
       pushUndoSnapshot(prev);
@@ -267,7 +284,7 @@ export default function Home() {
           name,
           phone,
           partySize,
-          notes: newGuest.notes.trim(),
+          notes,
           status: "WAITING",
           createdAt: new Date().toISOString(),
           queueOrder: Date.now() + Math.random(),
@@ -300,7 +317,7 @@ export default function Home() {
       const activePrev = prev.filter((e) => e.status === "UP");
       const occupiedPrev = activePrev.reduce(
         (sum, e) => sum + (e.linesUsed || 0),
-        0
+        0,
       );
       const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
 
@@ -308,14 +325,14 @@ export default function Home() {
 
       if (linesNeeded > settings.totalLines) {
         alert(
-          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`
+          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`,
         );
         return prev;
       }
 
       if (linesNeeded > availablePrev) {
         alert(
-          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`
+          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`,
         );
         return prev;
       }
@@ -461,7 +478,12 @@ export default function Home() {
               <input
                 className="input"
                 value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
+                onChange={(e) =>
+                  setPinInput(
+                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits),
+                  )
+                }
+                inputMode="numeric"
                 autoFocus
                 autoComplete="off"
               />

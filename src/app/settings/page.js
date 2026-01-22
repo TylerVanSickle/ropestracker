@@ -250,10 +250,14 @@ export default function SettingsPage() {
 
         <div className="guest-form spacer-sm">
           <label className="field">
-            <span className="field-label">Staff PIN (optional)</span>
+            <span className="field-label">
+              Staff PIN (optional){" "}
+              <strong> ONLY FIRST 4 CHARACTERS WILL SAVE</strong>
+            </span>
             <input
               className="input"
-              type="text"
+              type="number"
+              maxLength={4}
               value={settings.staffPin ?? ""}
               onChange={(e) => updateStaffPin(e.target.value)}
               placeholder="Set a PIN to lock staff view"

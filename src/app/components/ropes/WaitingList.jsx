@@ -96,7 +96,6 @@ export default function WaitlingList({
                   {e.notes ? (
                     <div className="item-notes">📝 {e.notes}</div>
                   ) : null}
-                  
                 </div>
 
                 <div className="item-actions">
@@ -150,14 +149,6 @@ export default function WaitlingList({
                     type="button"
                   >
                     Send Up
-                  </button>
-
-                  <button
-                    className="button"
-                    onClick={() => onNoShow(e.id)}
-                    type="button"
-                  >
-                    No-show
                   </button>
 
                   <button

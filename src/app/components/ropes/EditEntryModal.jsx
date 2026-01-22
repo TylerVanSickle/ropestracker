@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Modal from "./Modal";
 import { formatPhoneForTel, minutesFromNow } from "@/app/lib/ropesUtils";
+import { LIMITS, clampInt, clampText } from "@/app/lib/ropesStore";
 
 function computeMinutesRemaining(endTime) {
   if (!endTime) return 0;
@@ -25,12 +26,20 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
 
   const isUp = safeEntry.status === "UP";
 
+  const totalLines = useMemo(() => {
+    // settings.totalLines is already normalized in loadSettings, but keep it safe here too
+    const n = Number(settings?.totalLines ?? 15);
+    return Number.isFinite(n) ? Math.max(1, Math.trunc(n)) : 15;
+  }, [settings?.totalLines]);
+
   const initialDraft = useMemo(() => {
     const minsRemaining = isUp ? computeMinutesRemaining(safeEntry.endTime) : 0;
 
-    const partySize = Math.max(1, Number(safeEntry.partySize || 1));
+    const partySize = clampInt(safeEntry.partySize || 1, 1, totalLines);
+
+    // If UP, linesUsed is editable and must be an int clamp too
     const linesUsed = isUp
-      ? Math.max(1, Number(safeEntry.linesUsed ?? partySize))
+      ? clampInt(safeEntry.linesUsed ?? partySize, 1, totalLines)
       : null;
 
     return {
@@ -41,7 +50,7 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
       notes: safeEntry.notes || "",
       partySize,
       linesUsed,
-      minutesRemaining: isUp ? minsRemaining : null,
+      minutesRemaining: isUp ? clampInt(minsRemaining, 0, 999) : null,
     };
   }, [
     safeEntry.id,
@@ -53,6 +62,7 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
     safeEntry.phone,
     safeEntry.notes,
     isUp,
+    totalLines,
   ]);
 
   const [draft, setDraft] = useState(initialDraft);
@@ -60,31 +70,30 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
   if (!entry) return null;
 
   function save() {
-    const name = String(draft.name || "").trim();
+    const name = clampText(draft.name, LIMITS.entryName).trim();
     if (!name) {
       alert("Name is required.");
       return;
     }
 
-    const partySize = Math.max(1, Number(draft.partySize || 1));
+    const phone = clampText(draft.phone, LIMITS.entryPhone).trim();
+    const notes = clampText(draft.notes, LIMITS.entryIntakeNotes).trim();
+
+    const partySize = clampInt(draft.partySize || 1, 1, totalLines);
 
     const updated = {
       ...entry,
       name,
-      phone: String(draft.phone || "").trim(),
-      notes: String(draft.notes || "").trim(),
+      phone,
+      notes,
       partySize,
     };
 
     if (isUp) {
-      const linesUsed = Math.max(1, Number(draft.linesUsed || partySize));
-      if (linesUsed > settings.totalLines) {
-        alert(`Lines used can't exceed total lines (${settings.totalLines}).`);
-        return;
-      }
+      const linesUsed = clampInt(draft.linesUsed ?? partySize, 1, totalLines);
       updated.linesUsed = linesUsed;
 
-      const minsRemain = Math.max(0, Number(draft.minutesRemaining || 0));
+      const minsRemain = clampInt(draft.minutesRemaining ?? 0, 0, 999);
       updated.endTime = minutesFromNow(minsRemain);
     }
 
@@ -100,10 +109,17 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
             <input
               className="input"
               value={draft.name}
+              maxLength={LIMITS.entryName}
               onChange={(e) =>
-                setDraft((d) => ({ ...d, name: e.target.value }))
+                setDraft((d) => ({
+                  ...d,
+                  name: clampText(e.target.value, LIMITS.entryName),
+                }))
               }
             />
+            <span className="muted helper">
+              {String(draft.name ?? "").length}/{LIMITS.entryName}
+            </span>
           </label>
 
           <label className="field">
@@ -112,29 +128,58 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
               className="input"
               type="number"
               min={1}
+              max={totalLines}
               value={draft.partySize}
               onChange={(e) => {
-                const newPartySize =
-                  e.target.value === "" ? "" : Number(e.target.value);
-                setDraft((d) => ({
-                  ...d,
-                  partySize: newPartySize,
-                  // Keep linesUsed equal to partySize if it was previously the same
-                  linesUsed:
-                    d.linesUsed === d.partySize || d.linesUsed === ""
-                      ? newPartySize
-                      : d.linesUsed,
-                }));
+                const raw = e.target.value;
+
+                if (raw === "") {
+                  // allow blank while typing
+                  setDraft((d) => ({ ...d, partySize: "" }));
+                  return;
+                }
+
+                const nextParty = clampInt(raw, 1, totalLines);
+
+                setDraft((d) => {
+                  // If linesUsed was equal to partySize, keep them in sync
+                  const shouldSync =
+                    isUp &&
+                    (d.linesUsed === d.partySize ||
+                      d.linesUsed === "" ||
+                      d.linesUsed == null);
+
+                  return {
+                    ...d,
+                    partySize: nextParty,
+                    ...(shouldSync ? { linesUsed: nextParty } : {}),
+                  };
+                });
               }}
               onBlur={() => {
-                if (draft.partySize === "" || draft.partySize < 1) {
-                  setDraft((d) => ({
+                setDraft((d) => {
+                  const cur = d.partySize;
+                  if (
+                    cur === "" ||
+                    Number(cur) < 1 ||
+                    !Number.isFinite(Number(cur))
+                  ) {
+                    const fallback = 1;
+                    return {
+                      ...d,
+                      partySize: fallback,
+                      ...(isUp ? { linesUsed: d.linesUsed ?? fallback } : {}),
+                    };
+                  }
+                  const fixed = clampInt(cur, 1, totalLines);
+                  return {
                     ...d,
-                    partySize: 1,
-                    linesUsed:
-                      d.linesUsed === "" || d.linesUsed < 1 ? 1 : d.linesUsed,
-                  }));
-                }
+                    partySize: fixed,
+                    ...(isUp && (d.linesUsed === "" || d.linesUsed == null)
+                      ? { linesUsed: fixed }
+                      : {}),
+                  };
+                });
               }}
             />
           </label>
@@ -146,13 +191,20 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
             <input
               className="input"
               value={draft.phone}
+              maxLength={LIMITS.entryPhone}
               onChange={(e) =>
-                setDraft((d) => ({ ...d, phone: e.target.value }))
+                setDraft((d) => ({
+                  ...d,
+                  phone: clampText(e.target.value, LIMITS.entryPhone),
+                }))
               }
               placeholder="801-555-1234"
               inputMode="tel"
               autoComplete="tel"
             />
+            <span className="muted helper">
+              {String(draft.phone ?? "").length}/{LIMITS.entryPhone}
+            </span>
           </label>
 
           <label className="field">
@@ -160,12 +212,19 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
             <input
               className="input"
               value={draft.notes}
+              maxLength={LIMITS.entryIntakeNotes}
               onChange={(e) =>
-                setDraft((d) => ({ ...d, notes: e.target.value }))
+                setDraft((d) => ({
+                  ...d,
+                  notes: clampText(e.target.value, LIMITS.entryIntakeNotes),
+                }))
               }
               placeholder="call at 3:10"
               autoComplete="off"
             />
+            <span className="muted helper">
+              {String(draft.notes ?? "").length}/{LIMITS.entryIntakeNotes}
+            </span>
           </label>
         </div>
 
@@ -182,25 +241,39 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
                   className="input"
                   type="number"
                   min={1}
-                  max={settings.totalLines}
-                  value={draft.partySize}
+                  max={totalLines}
+                  value={draft.linesUsed ?? 1}
                   onChange={(e) => {
-                    const newPartySize =
-                      e.target.value === "" ? "" : Number(e.target.value);
+                    const raw = e.target.value;
+
+                    if (raw === "") {
+                      setDraft((d) => ({ ...d, linesUsed: "" }));
+                      return;
+                    }
+
+                    const nextLines = clampInt(raw, 1, totalLines);
+
                     setDraft((d) => ({
                       ...d,
-                      partySize: newPartySize,
-                      linesUsed: newPartySize,
+                      linesUsed: nextLines,
                     }));
                   }}
                   onBlur={() => {
-                    if (draft.partySize === "" || draft.partySize < 1) {
-                      setDraft((d) => ({
-                        ...d,
-                        partySize: 1,
-                        linesUsed: 1,
-                      }));
-                    }
+                    setDraft((d) => {
+                      const cur = d.linesUsed;
+                      if (
+                        cur === "" ||
+                        cur == null ||
+                        !Number.isFinite(Number(cur)) ||
+                        Number(cur) < 1
+                      ) {
+                        return {
+                          ...d,
+                          linesUsed: clampInt(d.partySize || 1, 1, totalLines),
+                        };
+                      }
+                      return { ...d, linesUsed: clampInt(cur, 1, totalLines) };
+                    });
                   }}
                 />
                 <p className="muted helper">
@@ -214,16 +287,19 @@ export default function EditEntryModal({ entry, settings, onClose, onSave }) {
                   className="input"
                   type="number"
                   min={0}
+                  max={999}
                   value={draft.minutesRemaining ?? 0}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      setDraft((d) => ({ ...d, minutesRemaining: 0 }));
+                      return;
+                    }
                     setDraft((d) => ({
                       ...d,
-                      minutesRemaining: Math.max(
-                        0,
-                        Number(e.target.value || 0)
-                      ),
-                    }))
-                  }
+                      minutesRemaining: clampInt(raw, 0, 999),
+                    }));
+                  }}
                 />
                 <p className="muted helper">Adjust when they’ll finish.</p>
               </label>

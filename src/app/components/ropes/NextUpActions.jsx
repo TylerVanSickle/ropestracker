@@ -65,10 +65,6 @@ export default function NextUpActions({
                 Edit
               </button>
 
-              <button className="button" type="button" onClick={onNoShow}>
-                No-show
-              </button>
-
               <button className="button" type="button" onClick={onRemove}>
                 Remove
               </button>
