@@ -68,6 +68,9 @@ export default function Topbar({
           <Link className="button" href="/settings">
             Settings
           </Link>
+          <Link className="button" href="/archive">
+            Archive
+          </Link>
         </div>
       </div>
 

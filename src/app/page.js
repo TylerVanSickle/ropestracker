@@ -146,7 +146,7 @@ export default function Home() {
 
   const active = useMemo(
     () => entries.filter((e) => e.status === "UP"),
-    [entries],
+    [entries]
   );
 
   const occupiedLines = active.reduce((sum, e) => sum + (e.linesUsed || 0), 0);
@@ -240,7 +240,7 @@ export default function Home() {
     alert(
       ok
         ? "Notification message copied to clipboard."
-        : "Could not copy message.",
+        : "Could not copy message."
     );
   }
 
@@ -297,7 +297,7 @@ export default function Home() {
       const activePrev = prev.filter((e) => e.status === "UP");
       const occupiedPrev = activePrev.reduce(
         (sum, e) => sum + (e.linesUsed || 0),
-        0,
+        0
       );
       const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
 
@@ -305,14 +305,14 @@ export default function Home() {
 
       if (linesNeeded > settings.totalLines) {
         alert(
-          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`,
+          `This party needs ${linesNeeded} lines, but total available is set to ${settings.totalLines}.`
         );
         return prev;
       }
 
       if (linesNeeded > availablePrev) {
         alert(
-          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`,
+          `Not enough sling lines available right now. Available: ${availablePrev}, needed: ${linesNeeded}.`
         );
         return prev;
       }
@@ -449,7 +449,7 @@ export default function Home() {
                 value={pinInput}
                 onChange={(e) =>
                   setPinInput(
-                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits),
+                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits)
                   )
                 }
                 inputMode="numeric"
@@ -485,17 +485,6 @@ export default function Home() {
         onOpenPrint={openPrint}
       />
 
-      <NextUpActions
-        nextWaiting={nextWaiting}
-        nextEstStartText={nextEstStartText}
-        nextWaitRange={nextWaitRange}
-        canStartNow={nextCanStartNow}
-        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
-        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
-        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
-        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
-      />
-
       <QuickQuote
         quoteSizeInput={quoteSizeInput}
         setQuoteSizeInput={setQuoteSizeInput}
@@ -506,6 +495,16 @@ export default function Home() {
         newGuest={newGuest}
         setNewGuest={setNewGuest}
         onAddGuest={addGuest}
+      />
+      <NextUpActions
+        nextWaiting={nextWaiting}
+        nextEstStartText={nextEstStartText}
+        nextWaitRange={nextWaitRange}
+        canStartNow={nextCanStartNow}
+        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
+        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
+        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
+        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
       />
 
       <section className="grid-2 spacer-md">

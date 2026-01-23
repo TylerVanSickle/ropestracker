@@ -9,7 +9,7 @@ export default function QuickQuote({
     <div className="card spacer-md">
       <div className="quote-row">
         <div>
-          <h2 className="section-title">Quick wait quote</h2>
+          <h2 className="section-title">Quick Wait Quote</h2>
           <p className="muted helper">
             If a guest asks “what’s the wait for 5?”, type 5.
           </p>

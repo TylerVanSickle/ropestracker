@@ -21,7 +21,7 @@ export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
     <div className="card spacer-md">
       <div className="card-header">
         <div>
-          <h2 className="section-title">Add guest</h2>
+          <h2 className="section-title">Add Guest</h2>
           <p className="muted helper">
             Add them to the line. You can edit them later.
           </p>
