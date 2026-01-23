@@ -6,11 +6,11 @@
   --color-bg: #f9fafb;
   --color-card: #ffffff;
   --color-border: #e5e7eb;
-  --color-text: #111827;
+  --color-text: #f700ff;
   --color-muted: #6b7280;
   --color-primary: #111827;
   --color-primary-text: #ffffff;
-
+  /* --color-text: #111827; */
   /* Layout */
   --max-width: 1200px;
   --radius: 12px;
