@@ -24,12 +24,12 @@ export const LS_KEY_FLAG_ARCHIVE = "ropes_flag_archive_v1";
  *  ========================= */
 export const LIMITS = {
   // entry fields
-  entryName: 80,
-  entryPhone: 24,
-  entryIntakeNotes: 500,
+  entryName: 50,
+  entryPhone: 14,
+  entryIntakeNotes: 50,
 
   // collections
-  guestNoteText: 1000,
+  guestNoteText: 500,
 
   // archive reason
   archiveReasonText: 220,
