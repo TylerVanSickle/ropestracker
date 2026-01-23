@@ -508,15 +508,6 @@ export default function Home() {
       />
 
       <section className="grid-2 spacer-md">
-        <UpNowList
-          active={active}
-          now={now}
-          onComplete={completeGroup}
-          onRemove={remove}
-          onCopy={copyToClipboard}
-          onEdit={(id) => setEditingId(id)}
-        />
-
         <WaitlingList
           waiting={waiting}
           availableLines={availableLines}
@@ -527,6 +518,14 @@ export default function Home() {
           onNotify={(entry) => notifyGuest(entry)}
           onStart={startGroup}
           onRemove={remove}
+        />
+        <UpNowList
+          active={active}
+          now={now}
+          onComplete={completeGroup}
+          onRemove={remove}
+          onCopy={copyToClipboard}
+          onEdit={(id) => setEditingId(id)}
         />
       </section>
 
