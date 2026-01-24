@@ -1,3 +1,4 @@
+// NextUpActions.jsx
 "use client";
 
 export default function NextUpActions({
@@ -9,7 +10,7 @@ export default function NextUpActions({
   onStart, // now means "Send Up"
   onEdit,
   onNoShow,
-  onRemove,
+  onRemove, // (kept for compatibility, but not used here anymore)
 }) {
   return (
     <div className="card spacer-md">
@@ -65,9 +66,7 @@ export default function NextUpActions({
                 Edit
               </button>
 
-              <button className="button" type="button" onClick={onRemove}>
-                Remove
-              </button>
+              {/* Remove moved into Edit modal "Danger zone" */}
             </div>
           </div>
 

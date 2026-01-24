@@ -17,7 +17,7 @@ export default function ArchivePage() {
     return () => unsub?.();
   }, []);
 
-  const records = useMemo(() => loadFlagArchive(), [tick]);
+  const records = useMemo(() => loadFlagArchive(), []);
 
   return (
     <main className="container">

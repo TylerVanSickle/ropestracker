@@ -1,6 +1,3 @@
-/* =========================
-   Global Variables (Theme)
-   ========================= */
 :root {
   /* Colors */
   --color-bg: #f9fafb;
@@ -8,22 +5,38 @@
   --color-border: #e5e7eb;
   --color-text: #111827;
   --color-muted: #6b7280;
+
   --color-primary: #111827;
   --color-primary-text: #ffffff;
+
+  --danger: #ef4444;
+  --danger-bg: #fff7f7;
 
   /* Layout */
   --max-width: 1200px;
   --radius: 12px;
   --padding: 16px;
 
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
   /* Typography */
-  --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  --font-main:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+
+  /* UI */
+  --ring: 0 0 0 3px rgba(17, 24, 39, 0.15);
+  --shadow-sm: 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 10px 20px rgba(0, 0, 0, 0.08);
+  --trans: 140ms ease;
 }
 
-/* =========================
-   Base styles
-   ========================= */
+/* Base */
 * {
   box-sizing: border-box;
 }
@@ -37,9 +50,17 @@ body {
   font-family: var(--font-main);
 }
 
-/* =========================
-   Layout / Utilities
-   ========================= */
+a {
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+/* Layout */
 .container {
   max-width: var(--max-width);
   margin: 0 auto;
@@ -51,6 +72,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: var(--padding);
+  box-shadow: var(--shadow-sm);
 }
 
 .muted {
@@ -58,43 +80,76 @@ body {
 }
 
 .spacer-sm {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .spacer-md {
-  margin-top: 16px;
-}
-
-/* =========================
-   Top bar
-   ========================= */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.title {
-  margin: 8px 0 4px;
+  margin-top: var(--space-4);
 }
 
 .row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-/* =========================
-   Buttons
-   ========================= */
-.button {
-  padding: 8px 12px;
-  border-radius: var(--radius);
+.sep {
+  margin: 0 var(--space-2);
+  color: var(--color-muted);
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.title {
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+/* Buttons */
+.button,
+.mini-btn {
   border: 1px solid var(--color-border);
   background: var(--color-card);
+  color: var(--color-text);
+  border-radius: var(--radius);
   cursor: pointer;
+  transition:
+    transform var(--trans),
+    box-shadow var(--trans),
+    opacity var(--trans),
+    background var(--trans),
+    border-color var(--trans);
+}
+
+.button {
+  padding: 8px 12px;
   font-size: 14px;
+}
+
+.button:hover:not(:disabled) {
+  box-shadow: var(--shadow-sm);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button:focus-visible,
+.input:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .button-primary {
@@ -109,14 +164,13 @@ body {
   font-weight: 600;
 }
 
-.button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.mini-btn {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
 }
 
-/* =========================
-   Grid / Lists / Items
-   ========================= */
+/* Grid / Lists / Items */
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -136,8 +190,9 @@ body {
 
 .item {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -146,6 +201,7 @@ body {
 
 .item-main {
   min-width: 0;
+  flex: 1;
 }
 
 .item-title {
@@ -158,26 +214,38 @@ body {
 
 .item-sub {
   font-size: 12px;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .item-notes {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   font-size: 13px;
 }
 
 .item-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: stretch;
 }
 
-.item-next {
-  border-color: #111827;
+@media (max-width: 760px) {
+  .item {
+    align-items: flex-start;
+  }
+  .item-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+  }
 }
 
-/* Pills / Badges */
+.item-next {
+  border-color: var(--color-primary);
+}
+
+/* Pills */
 .pill,
 .badge {
   display: inline-block;
@@ -196,34 +264,32 @@ body {
 
 .badge-alert,
 .pill-alert {
-  border-color: #ef4444;
+  border-color: var(--danger);
   background: #fee2e2;
 }
 
-/* =========================
-   Form styling
-   ========================= */
+/* Forms */
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .helper {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   font-size: 13px;
 }
 
 .guest-form {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .form-row.form-row-2 {
@@ -244,7 +310,8 @@ body {
   color: var(--color-muted);
 }
 
-.input {
+.input,
+select.input {
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -254,11 +321,9 @@ body {
   color: var(--color-text);
 }
 
-/* =========================
-   Phone row inside items
-   ========================= */
+/* Phone row */
 .item-phone {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -271,20 +336,9 @@ body {
   text-decoration: underline;
 }
 
-.mini-btn {
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-card);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-/* =========================
-   Estimate row + Call banner
-   ========================= */
+/* Estimate row + Call banner */
 .estimate-row {
-  margin-top: 8px;
+  margin-top: var(--space-3);
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -296,8 +350,8 @@ body {
 }
 
 .call-banner {
-  border: 1px solid #ef4444;
-  background: #fff7f7;
+  border: 1px solid var(--danger);
+  background: var(--danger-bg);
   border-radius: var(--radius);
   padding: 12px;
   margin: 12px 0;
@@ -316,31 +370,24 @@ body {
 }
 
 .call-banner-sub {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   font-size: 13px;
 }
 
 .call-banner-actions {
-  margin-top: 10px;
+  margin-top: var(--space-3);
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.sep {
-  margin: 0 8px;
-  color: var(--color-muted);
-}
-
-/* =========================
-   Quick quote / Next strip
-   ========================= */
+/* Quick quote / Next strip */
 .quote-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -353,21 +400,21 @@ body {
 }
 
 .next-strip {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: #fafafa;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
   align-items: center;
 }
 
 .next-strip-hot {
-  border-color: #ef4444;
-  background: #fff7f7;
+  border-color: var(--danger);
+  background: var(--danger-bg);
 }
 
 .next-strip-title {
@@ -378,9 +425,7 @@ body {
   font-size: 16px;
 }
 
-/* =========================
-   Modal
-   ========================= */
+/* Modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -397,21 +442,18 @@ body {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 16px;
+  box-shadow: var(--shadow-md);
 }
 
 .modal-top {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
 }
 
-/* =========================
-   Client Display Theme (Light / Dark / Auto)
-   Only affects /client page via vars
-   ========================= */
+/* Client display vars */
 .client-display {
-  /* defaults (dark-ish) */
   --client-bg: #0b0f14;
   --client-card: rgba(255, 255, 255, 0.06);
   --client-border: rgba(255, 255, 255, 0.12);
@@ -424,7 +466,6 @@ body {
   font-family: var(--font-main);
 }
 
-/* Auto: follow OS preference */
 @media (prefers-color-scheme: dark) {
   .client-display.client-theme-auto {
     --client-bg: #0b1020;
@@ -444,7 +485,6 @@ body {
   }
 }
 
-/* Forced themes */
 .client-display.client-theme-dark {
   --client-bg: #0b1020;
   --client-card: rgba(255, 255, 255, 0.06);
@@ -461,9 +501,7 @@ body {
   --client-muted: #6b7280;
 }
 
-/* =========================
-   Client Display Mode (/client)
-   ========================= */
+/* Client display layout */
 .client-display .client-wrap {
   max-width: 1400px;
   margin: 0 auto;
@@ -716,9 +754,7 @@ body {
   font-size: 18px;
 }
 
-/* =========================
-   Client Display extras: Live + Closed + How it works
-   ========================= */
+/* Client extras */
 .client-display .live-pill {
   display: inline-flex;
   align-items: center;
@@ -735,7 +771,7 @@ body {
 }
 
 .client-display .live-dot.closed {
-  background: #ef4444;
+  background: var(--danger);
   box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
   animation: closedPulse 1.6s infinite;
 }
@@ -817,9 +853,7 @@ body {
   font-size: 18px;
 }
 
-/* =========================
-   Print tweaks
-   ========================= */
+/* Print */
 @media print {
   .topbar .row,
   .button,
@@ -840,4 +874,15 @@ body {
   body {
     background: white;
   }
+}
+.danger-zone {
+  margin-left: auto;
+  padding: 12px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.danger-zone .row {
+  justify-content: space-between;
 }

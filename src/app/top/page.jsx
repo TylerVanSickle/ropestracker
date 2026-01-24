@@ -10,7 +10,6 @@ import {
   normalizeEntries,
   patchEntry,
   extendEntryByMinutes,
-  endEntryEarly,
   markEntryDone,
   formatTime,
   archiveFlaggedEntry,
@@ -192,13 +191,16 @@ export default function TopRopesPage() {
     setLocalEntries(nextEntries);
   }
 
-  function handleEndEarly(entryId) {
-    const nextEntries = endEntryEarly(entryId);
-    setLocalEntries(nextEntries);
-  }
+  function handleFinish(entry) {
+    if (!entry?.id) return;
 
-  function handleDone(entryId) {
-    const nextEntries = markEntryDone(entryId);
+    const name = String(entry.name || "this group");
+    const ok = confirm(
+      `Finish "${name}"?\n\nThis will mark them DONE and free up their lines.`,
+    );
+    if (!ok) return;
+
+    const nextEntries = markEntryDone(entry.id);
     setLocalEntries(nextEntries);
   }
 
@@ -631,18 +633,10 @@ export default function TopRopesPage() {
 
                         <button
                           className="button"
-                          onClick={() => handleEndEarly(e.id)}
+                          onClick={() => handleFinish(e)}
                           type="button"
                         >
-                          End Early
-                        </button>
-
-                        <button
-                          className="button"
-                          onClick={() => handleDone(e.id)}
-                          type="button"
-                        >
-                          Done
+                          Finish
                         </button>
 
                         <button
@@ -734,19 +728,14 @@ export default function TopRopesPage() {
                           +5 min
                         </button>
                         <button
-                          className="button"
-                          onClick={() => handleEndEarly(e.id)}
-                          type="button"
-                        >
-                          End Early
-                        </button>
-                        <button
                           className="button button-primary"
-                          onClick={() => handleDone(e.id)}
+                          onClick={() => handleFinish(e)}
                           type="button"
+                          title="Marks group done and frees up lines"
                         >
-                          Mark Done
+                          Finish
                         </button>
+
                         <button
                           className="button"
                           onClick={() => openEdit(e)}

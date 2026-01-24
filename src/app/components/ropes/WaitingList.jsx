@@ -1,3 +1,4 @@
+// WaitingList.jsx
 "use client";
 
 import { formatTime } from "@/app/lib/ropesStore";
@@ -13,7 +14,7 @@ export default function WaitlingList({
   onNotify,
   onStart, // now means "Send Up" (reserve lines + mark coming up)
   onNoShow,
-  onRemove,
+  onRemove, // (kept for compatibility, but not used here anymore)
 }) {
   return (
     <div className="card">
@@ -37,7 +38,6 @@ export default function WaitlingList({
             const needs = Math.max(1, Number(e.partySize || 1));
             const isFront = idx === 0;
 
-            // "Send Up" still reserves lines, so must have space
             const canSendUp = isFront && availableLines >= needs;
 
             const reason = !isFront
@@ -128,7 +128,6 @@ export default function WaitlingList({
                     </button>
                   </div>
 
-                  {/* Notify stays gated by "can send up" (same behavior as before) */}
                   {isFront && canSendUp ? (
                     <button
                       className="button"
@@ -151,13 +150,7 @@ export default function WaitlingList({
                     Send Up
                   </button>
 
-                  <button
-                    className="button"
-                    onClick={() => onRemove(e.id)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
+                  {/* Remove moved into Edit modal "Danger zone" */}
                 </div>
               </div>
             );

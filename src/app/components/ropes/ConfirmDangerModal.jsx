@@ -1,28 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Modal from "./Modal";
 
 export default function ConfirmDangerModal({
   open,
   title = "Confirm",
   dangerVerb = "Confirm",
-  confirmWord = "CLEAR", // user must type this word
+  confirmWord = "CLEAR",
   description = "This action cannot be undone.",
   onConfirm,
   onClose,
 }) {
   const [step, setStep] = useState(1);
   const [typed, setTyped] = useState("");
-
-  // Reset when opened/closed
-  useMemo(() => {
-    if (!open) {
-      setStep(1);
-      setTyped("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const normalizedNeeded = String(confirmWord || "")
     .trim()
@@ -33,13 +24,11 @@ export default function ConfirmDangerModal({
   const canConfirm = normalizedTyped === normalizedNeeded && normalizedNeeded;
 
   function closeAll() {
-    setStep(1);
-    setTyped("");
     onClose?.();
+    // no local reset here; parent remount (key) handles it
   }
 
   function back() {
-    if (step <= 1) return;
     setStep((s) => Math.max(1, s - 1));
   }
 

@@ -1,3 +1,4 @@
+// UpNowList.jsx
 "use client";
 
 import { formatTime } from "@/app/lib/ropesStore";
@@ -14,15 +15,14 @@ function getPhaseLabel(e) {
   const raw = String(e?.coursePhase || "").toUpperCase();
   if (raw === "SENT") return "COMING UP";
   if (raw === "ON_COURSE") return "ON COURSE";
-  // if older entries don't have coursePhase, treat as on course
   return "ON COURSE";
 }
 
 export default function UpNowList({
   active = [],
   now = new Date(),
-  onComplete = () => {},
-  onRemove = () => {},
+  onComplete = () => {}, // kept for compatibility (now triggered via Edit modal)
+  onRemove = () => {}, // kept for compatibility (now triggered via Edit modal)
   onCopy = () => {},
   onEdit = () => {},
 }) {
@@ -106,22 +106,7 @@ export default function UpNowList({
                     Edit
                   </button>
 
-                  <button
-                    className="button button-primary"
-                    onClick={() => onComplete(e.id)}
-                    type="button"
-                    title="Marks group done"
-                  >
-                    Complete
-                  </button>
-
-                  <button
-                    className="button"
-                    onClick={() => onRemove(e.id)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
+                  {/* Complete + Remove moved into Edit modal "Danger zone" */}
                 </div>
               </div>
             );

@@ -13,15 +13,13 @@ export const LS_KEY_AUTH = "ropes_staff_authed_v1";
 // archives: ropes_archive_YYYY-MM-DD
 export const LS_KEY_ARCHIVE_PREFIX = "ropes_archive_";
 
-/** =========================
- *  DB-friendly collections (localStorage-only for now)
- *  ========================= */
+/* DB-friendly collections (localStorage-only for now)  */
 export const LS_KEY_GUEST_NOTES = "ropes_guest_notes_v1";
 export const LS_KEY_FLAG_ARCHIVE = "ropes_flag_archive_v1";
 
-/** =========================
- *  Limits (DB-ready)
- *  ========================= */
+/**
+  Limits (DB-ready)
+ *  */
 export const LIMITS = {
   // entry fields
   entryName: 50,
@@ -40,7 +38,7 @@ export const LIMITS = {
 
 /** =========================
  *  Helpers (safe for DB later)
- *  ========================= */
+ *  */
 export function clampInt(n, min, max) {
   const x = Number(n);
   if (!Number.isFinite(x)) return min;
@@ -111,7 +109,7 @@ function stampAll(type) {
 
 /** =========================
  *  Generic list helpers
- *  ========================= */
+ *  */
 function loadList(key) {
   if (typeof window === "undefined") return [];
   try {
@@ -343,7 +341,7 @@ export function clearStaffAuth() {
 
 /* =========================
    Archives (daily snapshot)
-   ========================= */
+   */
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -404,7 +402,7 @@ export function loadArchive(key) {
 
 /* =========================
    Utilities
-   ========================= */
+   */
 
 export function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -419,7 +417,7 @@ export function formatTime(value) {
 /** =========================
  *  Guest Notes (per-entry)
  *  Bottom can add; Top can archive.
- *  ========================= */
+ *  */
 
 export function loadGuestNotes() {
   return loadList(LS_KEY_GUEST_NOTES);
@@ -466,7 +464,7 @@ export function deleteNotesForEntry(entryId) {
 
 /** =========================
  *  Flag Archive (problem groups)
- *  ========================= */
+ *  */
 
 export function loadFlagArchive() {
   return loadList(LS_KEY_FLAG_ARCHIVE);
@@ -539,7 +537,7 @@ export function deleteArchiveRecord(recordId) {
 
 /** =========================
  *  Merge (Top "Coming Up Now")
- *  ========================= */
+ *  */
 
 export function mergeEntries(
   primaryId,
@@ -644,7 +642,7 @@ export function mergeEntries(
 
 /* =========================
    Entry normalization / patching
-   ========================= */
+   */
 
 export function normalizeEntry(e) {
   if (!e || typeof e !== "object") return e;
