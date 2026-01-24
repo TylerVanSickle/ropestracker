@@ -897,3 +897,224 @@ select.input {
     box-shadow: inset 0 0 0 0 rgba(255, 59, 48, 0);
   }
 }
+
+/* RESPONSIVE DESIGN STUFFS DOWN HERE*/
+
+/* 1) Make type + spacing scale smoothly between phone and desktop */
+:root {
+  /* clamp(min, preferred, max) */
+  --pad-page: clamp(12px, 1.6vw, 22px);
+  --pad-card: clamp(12px, 1.4vw, 18px);
+
+  --text-xs: clamp(12px, 0.9vw, 13px);
+  --text-sm: clamp(13px, 1vw, 14px);
+  --text-md: clamp(14px, 1.05vw, 16px);
+  --text-lg: clamp(16px, 1.25vw, 18px);
+  --text-xl: clamp(18px, 1.6vw, 22px);
+  --text-2xl: clamp(22px, 2.2vw, 30px);
+
+  /* slightly rounder on big screens */
+  --radius: clamp(12px, 1.2vw, 18px);
+}
+
+/* Use scaled padding + font sizing */
+.container {
+  padding: var(--pad-page);
+}
+
+.card {
+  padding: var(--pad-card);
+}
+
+.helper,
+.item-sub,
+.muted,
+.field-label {
+  font-size: var(--text-xs);
+}
+
+.input,
+select.input,
+.button {
+  font-size: var(--text-sm);
+}
+
+.title {
+  font-size: var(--text-xl);
+}
+
+/* Improve touch targets (especially on mobile/tablet) */
+.button,
+.client-display .client-btn,
+.mini-btn {
+  min-height: 40px;
+}
+
+.mini-btn {
+  min-height: 32px;
+}
+
+/* Prevent long names from exploding layouts */
+.item-title,
+.client-display .client-nextname {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 2) Phones (<= 520px) */
+@media (max-width: 520px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar .row {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .danger-zone {
+    margin-left: 0;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .item {
+    padding: 10px;
+  }
+
+  .item-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .button-wide {
+    padding: 14px 14px;
+    font-size: 15px;
+  }
+
+  .quote-controls {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .next-strip {
+    align-items: flex-start;
+  }
+}
+
+/* 3) Tablets (521px - 1024px): keep things roomy + stable */
+@media (min-width: 521px) and (max-width: 1024px) {
+  :root {
+    --max-width: 980px;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .form-row {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  .item-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+  }
+}
+
+/* 4) Large desktops (>= 1280px): allow a bit more width */
+@media (min-width: 1280px) {
+  :root {
+    --max-width: 1280px;
+  }
+
+  .grid-2 {
+    gap: 14px;
+  }
+}
+
+/* 5) Ultra-wide / TV / kiosk (>= 1600px):
+      Add class "tv" on <body> OR rely on this breakpoint.
+      Bigger type + bigger controls. */
+@media (min-width: 1600px) {
+  :root {
+    --max-width: 1500px;
+    --pad-page: 26px;
+    --pad-card: 22px;
+  }
+
+  .title {
+    font-size: clamp(26px, 2.2vw, 40px);
+  }
+
+  .button {
+    padding: 12px 16px;
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  .input,
+  select.input {
+    padding: 12px;
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  .item {
+    padding: 16px;
+  }
+
+  .big-count {
+    font-size: 28px;
+  }
+}
+
+/* Optional: Explicit TV mode (manual toggle)
+   Put class="tv" on body to force kiosk sizing anywhere. */
+body.tv {
+  --max-width: 1600px;
+  --pad-page: 28px;
+  --pad-card: 24px;
+
+  --text-xs: 16px;
+  --text-sm: 18px;
+  --text-md: 20px;
+  --text-lg: 22px;
+  --text-xl: 28px;
+  --text-2xl: 40px;
+}
+
+body.tv .button,
+body.tv .input,
+body.tv select.input {
+  min-height: 54px;
+}
+
+body.tv .client-display .client-title {
+  font-size: 56px;
+}
+
+body.tv .client-display .client-h2 {
+  font-size: 34px;
+}
+
+body.tv .client-display .client-nextname {
+  font-size: 72px;
+}
+
+/* 6) Better fullscreen behavior on TV screens */
+@media (display-mode: fullscreen) {
+  .container {
+    max-width: none;
+  }
+}
+
+/* 7) Small polish: avoid sideways scrolling */
+html,
+body {
+  overflow-x: hidden;
+}
