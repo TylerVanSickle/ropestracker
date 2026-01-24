@@ -16,10 +16,11 @@ import {
   mergeEntries,
 } from "@/app/lib/ropesStore";
 
-import { COURSE_TAGS } from "../lib/ropesTags";
+import { COURSE_TAGS, COURSE_TAG_LABELS } from "../lib/ropesTags";
 import { ensureQueueOrder } from "@/app/lib/ropesUtils";
 
 import ArchiveModal from "@/app/components/ropes/ArchiveModal";
+import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 
 function minutesLeft(endTimeISO) {
   if (!endTimeISO) return null;
@@ -98,6 +99,29 @@ function getDerived(entriesRaw, settings) {
   return { waiting, up, sentUp, onCourse, availableLines, totalLines };
 }
 
+function getTagMetaByLabel(label) {
+  const s = String(label || "");
+  return COURSE_TAGS.find((t) => t.label === s) || null;
+}
+
+function entryTintStyle(entry) {
+  const meta = getTagMetaByLabel(entry?.assignedTag);
+  if (!meta?.color) return null;
+
+  // If your app uses a different dark-mode flag, swap this check.
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement?.getAttribute("data-theme") === "dark";
+
+  const bgAlpha = isDark ? 0.14 : 0.08;
+  const borderAlpha = isDark ? 0.65 : 0.55;
+
+  return {
+    background: `rgba(${meta.color}, ${bgAlpha})`,
+    borderLeft: `6px solid rgba(${meta.color}, ${borderAlpha})`,
+  };
+}
+
 export default function TopRopesPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [entries, setEntries] = useState(() => loadEntries());
@@ -120,6 +144,10 @@ export default function TopRopesPage() {
   // Archive modal state
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveEntry, setArchiveEntry] = useState(null);
+
+  // Finish confirm modal state
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
+  const [finishEntry, setFinishEntry] = useState(null);
 
   useEffect(() => {
     const unsub = subscribeToRopesStorage(() => {
@@ -145,7 +173,7 @@ export default function TopRopesPage() {
   const closed = Boolean(settings?.paused);
 
   const availableTagsGlobal = useMemo(
-    () => getAvailableTags(up, COURSE_TAGS),
+    () => getAvailableTags(up, COURSE_TAG_LABELS),
     [up],
   );
 
@@ -191,17 +219,26 @@ export default function TopRopesPage() {
     setLocalEntries(nextEntries);
   }
 
+  function openFinishConfirm(entry) {
+    setFinishEntry(entry);
+    setFinishConfirmOpen(true);
+  }
+
+  function closeFinishConfirm() {
+    setFinishConfirmOpen(false);
+    setFinishEntry(null);
+  }
+
+  function confirmFinish() {
+    if (!finishEntry?.id) return;
+    const nextEntries = markEntryDone(finishEntry.id);
+    setLocalEntries(nextEntries);
+    closeFinishConfirm();
+  }
+
   function handleFinish(entry) {
     if (!entry?.id) return;
-
-    const name = String(entry.name || "this group");
-    const ok = confirm(
-      `Finish "${name}"?\n\nThis will mark them DONE and free up their lines.`,
-    );
-    if (!ok) return;
-
-    const nextEntries = markEntryDone(entry.id);
-    setLocalEntries(nextEntries);
+    openFinishConfirm(entry);
   }
 
   // ===== Edit modal =====
@@ -537,6 +574,7 @@ export default function TopRopesPage() {
                       className="item item-next"
                       style={{
                         padding: 14,
+                        ...(entryTintStyle(e) || {}),
                         outline: selected
                           ? "2px solid var(--accent, #6aa9ff)"
                           : "none",
@@ -691,7 +729,14 @@ export default function TopRopesPage() {
                         : `${Math.abs(left)} min overdue`;
 
                   return (
-                    <div key={e.id} className="item" style={{ padding: 14 }}>
+                    <div
+                      key={e.id}
+                      className="item"
+                      style={{
+                        padding: 14,
+                        ...(entryTintStyle(e) || {}),
+                      }}
+                    >
                       <div className="item-main">
                         <div className="item-title" style={{ fontSize: 18 }}>
                           {e.name} <span className="pill">{needs} lines</span>{" "}
@@ -727,6 +772,7 @@ export default function TopRopesPage() {
                         >
                           +5 min
                         </button>
+
                         <button
                           className="button button-primary"
                           onClick={() => handleFinish(e)}
@@ -743,6 +789,7 @@ export default function TopRopesPage() {
                         >
                           Edit
                         </button>
+
                         <button
                           className="button"
                           onClick={() => openArchive(e)}
@@ -898,6 +945,22 @@ export default function TopRopesPage() {
         </div>
       </div>
 
+      {/* Finish Confirm Modal */}
+      <ConfirmModal
+        open={finishConfirmOpen}
+        title="Finish group?"
+        message={
+          finishEntry
+            ? `Finish "${String(finishEntry.name || "this group")}"?\n\nThis will mark them DONE and free up their lines.`
+            : ""
+        }
+        confirmText="Finish"
+        cancelText="Cancel"
+        tone="danger"
+        onClose={closeFinishConfirm}
+        onConfirm={confirmFinish}
+      />
+
       {/* Archive Modal */}
       <ArchiveModal
         open={archiveOpen}
@@ -971,7 +1034,10 @@ export default function TopRopesPage() {
                     style={{ width: "100%", padding: 10 }}
                     value={editDraft.partySize}
                     onChange={(e) =>
-                      setEditDraft((d) => ({ ...d, partySize: e.target.value }))
+                      setEditDraft((d) => ({
+                        ...d,
+                        partySize: e.target.value,
+                      }))
                     }
                     inputMode="numeric"
                   />

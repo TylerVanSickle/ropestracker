@@ -17,6 +17,37 @@ function getPhaseLabel(e) {
   if (raw === "ON_COURSE") return "ON COURSE";
   return "ON COURSE";
 }
+function timeDangerStyle({ secsLeft, totalMins = 35 }) {
+  if (secsLeft == null) return null;
+
+  const totalSecs = totalMins * 60;
+  const clamped = Math.max(0, Math.min(totalSecs, secsLeft));
+  const progress = clamped / totalSecs;
+
+  // No warning in first half
+  if (progress > 0.43) return null;
+
+  const danger = (0.5 - progress) / 0.5;
+
+  const bgAlpha = Math.min(0.35, 0.08 + danger * 0.35);
+  const borderAlpha = Math.min(0.9, 0.3 + danger * 0.6);
+
+  const style = {
+    background: `rgba(255, 59, 48, ${bgAlpha})`,
+    borderLeft: `6px solid rgba(255, 59, 48, ${borderAlpha})`,
+  };
+
+  // 🔥 Pulse when < 3 minutes
+  if (secsLeft <= 60) {
+    style.animation = "dangerPulse 1s ease-in-out infinite";
+  } else if (secsLeft <= 180) {
+    style.animation = "dangerPulse 1.6s ease-in-out infinite";
+  } else if (secsLeft <= 300) {
+    style.animation = "dangerPulse 2.4s ease-in-out infinite";
+  }
+
+  return style;
+}
 
 export default function UpNowList({
   active = [],
@@ -47,7 +78,16 @@ export default function UpNowList({
             const phaseLabel = getPhaseLabel(e);
 
             return (
-              <div key={e.id} className="item">
+              <div
+                key={e.id}
+                className="item"
+                style={{
+                  ...(timeDangerStyle({
+                    secsLeft,
+                    totalMins: Number(e.topDurationMin || 35),
+                  }) || {}),
+                }}
+              >
                 <div className="item-main">
                   <div className="item-title">
                     {e.name}{" "}
