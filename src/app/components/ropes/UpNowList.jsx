@@ -72,9 +72,26 @@ export default function UpNowList({
 }) {
   const safeActive = Array.isArray(active) ? active : [];
 
+  // ✅ total "people/lines" currently on course (sum of partySize)
+  const activeLinesUsed = safeActive.reduce(
+    (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+    0,
+  );
+
   return (
     <div className="card">
-      <h2 className="section-title">Up now ({safeActive.length})</h2>
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "center" }}
+      >
+        <h2 className="section-title" style={{ margin: 0 }}>
+          Up now ({safeActive.length})
+        </h2>
+
+        <span className="muted" style={{ fontSize: 13 }}>
+          On course: <strong>{activeLinesUsed}</strong> line(s)
+        </span>
+      </div>
 
       <div className="list spacer-sm">
         {safeActive.length === 0 ? (

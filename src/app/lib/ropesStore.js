@@ -68,6 +68,9 @@ const DEFAULT_SETTINGS = {
   venueName: "Ropes Course Waitlist",
   clientTheme: "auto", // "auto" | "light" | "dark"
   staffPin: "", // if set, staff page requires PIN
+  flowPaused: false,
+  flowPauseReason: "",
+  flowPausedAt: null, // ISO string or null
 };
 
 const BC_NAME = "ropes_waitlist_updates_v1";
@@ -207,6 +210,26 @@ export function loadSettings() {
       LIMITS.staffPinMaxDigits,
     );
 
+    // ✅ Flow control (Top can pause Bottom send-ups)
+    const flowPaused = Boolean(
+      parsed.flowPaused ?? DEFAULT_SETTINGS.flowPaused,
+    );
+
+    const flowPauseReason = String(
+      parsed.flowPauseReason ?? DEFAULT_SETTINGS.flowPauseReason,
+    )
+      .trim()
+      .slice(0, 120);
+
+    let flowPausedAt = parsed.flowPausedAt ?? DEFAULT_SETTINGS.flowPausedAt;
+    flowPausedAt = flowPausedAt ? String(flowPausedAt) : null;
+
+    // Validate ISO date (if invalid, null it out)
+    if (flowPausedAt) {
+      const d = new Date(flowPausedAt);
+      if (Number.isNaN(d.getTime())) flowPausedAt = null;
+    }
+
     const settings = {
       totalLines,
       durationMin,
@@ -216,6 +239,10 @@ export function loadSettings() {
       venueName,
       clientTheme,
       staffPin,
+
+      flowPaused,
+      flowPauseReason,
+      flowPausedAt,
     };
 
     // normalize stored settings
@@ -226,11 +253,31 @@ export function loadSettings() {
   }
 }
 
-export function saveSettings(settings) {
+export function saveSettings(next) {
   if (typeof window === "undefined") return;
-  const safe = settings || DEFAULT_SETTINGS;
-  localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(safe));
-  stampAll("SETTINGS_UPDATED");
+
+  try {
+    // IMPORTANT: merge to avoid dropping new keys like flowPaused
+    const current = loadSettings();
+    const merged = { ...current, ...(next || {}) };
+
+    localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(merged));
+
+    // ✅ this is the "signal" that forces other screens to refresh
+    localStorage.setItem(LS_KEY_UPDATED_AT, new Date().toISOString());
+
+    // ✅ if your subscribeToRopesStorage listens to a custom event, fire it
+    window.dispatchEvent(new Event("ropes_storage"));
+  } catch {
+    // ignore
+  }
+}
+
+export function patchSettings(partial) {
+  const current = loadSettings();
+  const next = { ...current, ...(partial || {}) };
+  saveSettings(next);
+  return next;
 }
 
 export function loadEntries() {
@@ -252,37 +299,30 @@ export function saveEntries(entries) {
   stampAll("ENTRIES_UPDATED");
 }
 
-export function subscribeToRopesStorage(onChange) {
+export function subscribeToRopesStorage(cb) {
   if (typeof window === "undefined") return () => {};
 
-  const handler = (e) => {
+  const handler = () => cb?.();
+
+  // ✅ same-tab updates (our explicit signal)
+  window.addEventListener("ropes_storage", handler);
+
+  // ✅ cross-tab updates (native storage event)
+  const onStorage = (e) => {
+    if (!e) return;
     if (
-      e.key === LS_KEY_SETTINGS ||
       e.key === LS_KEY_ENTRIES ||
-      e.key === LS_KEY_UPDATED_AT ||
-      e.key === LS_KEY_VERSION ||
-      e.key === LS_KEY_UNDO ||
-      e.key === LS_KEY_AUTH ||
-      e.key === LS_KEY_GUEST_NOTES ||
-      e.key === LS_KEY_FLAG_ARCHIVE
+      e.key === LS_KEY_SETTINGS ||
+      e.key === LS_KEY_UPDATED_AT
     ) {
-      onChange?.();
+      handler();
     }
   };
-
-  window.addEventListener("storage", handler);
-
-  let bc = null;
-  try {
-    bc = new BroadcastChannel(BC_NAME);
-    bc.onmessage = () => onChange?.();
-  } catch {
-    bc = null;
-  }
+  window.addEventListener("storage", onStorage);
 
   return () => {
-    window.removeEventListener("storage", handler);
-    if (bc) bc.close();
+    window.removeEventListener("ropes_storage", handler);
+    window.removeEventListener("storage", onStorage);
   };
 }
 
@@ -535,7 +575,7 @@ export function deleteArchiveRecord(recordId) {
   return next;
 }
 
-/** =========================
+/*
  *  Merge (Top "Coming Up Now")
  *  */
 

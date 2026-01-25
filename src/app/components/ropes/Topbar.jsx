@@ -38,6 +38,10 @@ export default function Topbar({
         </div>
 
         <div className="row">
+          <Link className="button" href="/top">
+            Top
+          </Link>
+
           <button className="button" type="button" onClick={onOpenClient}>
             Client
           </button>
@@ -51,10 +55,6 @@ export default function Topbar({
           >
             Undo
           </button>
-
-          <Link className="button" href="/top">
-            Top
-          </Link>
 
           <button
             className="button"
