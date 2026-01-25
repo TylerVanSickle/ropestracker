@@ -9,6 +9,32 @@ import {
   clampInt,
 } from "@/app/lib/ropesStore";
 
+/* Phone formatter (US) */
+function formatPhoneUS(input) {
+  if (!input) return "";
+
+  // Strip non-digits
+  let digits = input.replace(/\D/g, "");
+
+  // Handle leading US country code
+  if (digits.length > 10 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+
+  // Cap at 10 digits
+  digits = digits.slice(0, 10);
+
+  const len = digits.length;
+
+  if (len === 0) return "";
+  if (len < 4) return digits;
+  if (len < 7) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  }
+
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
   // Pull current settings so we can clamp party size to totalLines
   const maxLines = useMemo(() => {
@@ -69,11 +95,9 @@ export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
                 const n = Number(raw);
                 if (!Number.isFinite(n)) return;
 
-                const clamped = clampInt(n, 1, maxLines);
-
                 setNewGuest((g) => ({
                   ...g,
-                  partySize: clamped,
+                  partySize: clampInt(n, 1, maxLines),
                 }));
               }}
               onBlur={() => {
@@ -103,22 +127,20 @@ export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
             <span className="field-label">Phone (optional)</span>
             <input
               className="input"
-              type="number"
-              value={newGuest.phone}
-              maxLength={LIMITS.entryPhone}
-              onChange={(e) =>
-                setNewGuest((g) => ({
-                  ...g,
-                  phone: clampText(e.target.value, LIMITS.entryPhone),
-                }))
-              }
-              placeholder="e.g., 801-555-1234"
+              type="tel"
               inputMode="tel"
               autoComplete="tel"
+              value={newGuest.phone}
+              placeholder="(801) 555-1234"
+              onChange={(e) => {
+                const formatted = formatPhoneUS(e.target.value);
+                setNewGuest((g) => ({
+                  ...g,
+                  phone: formatted,
+                }));
+              }}
             />
-            <span className="muted helper">
-              {String(newGuest.phone ?? "").length}/{LIMITS.entryPhone}
-            </span>
+            <span className="muted helper">Formatted automatically</span>
           </label>
 
           <label className="field">

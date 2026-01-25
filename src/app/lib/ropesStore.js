@@ -797,3 +797,19 @@ export function startTopCourse(entryId, topDurationMin) {
   saveEntries(next);
   return next;
 }
+
+// THIS IS FOR WHEN WE IMPLEMENT TWILLIO IT FORMATS PHONES
+export function toE164US(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+
+  if (!digits) return null;
+
+  // If 11 digits and starts with 1, keep it
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+
+  // If 10 digits, assume US and add +1
+  if (digits.length === 10) return `+1${digits}`;
+
+  // Anything else: reject
+  return null;
+}
