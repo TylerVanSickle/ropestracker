@@ -25,8 +25,16 @@ import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 function minutesLeft(endTimeISO) {
   if (!endTimeISO) return null;
   const t = new Date(endTimeISO);
-  if (Number.isNaN(t.getTime())) return null;
-  return Math.ceil((t.getTime() - Date.now()) / 60000);
+  const endMs = t.getTime();
+  if (!Number.isFinite(endMs)) return null;
+
+  const diffMs = endMs - Date.now();
+
+  // ✅ For positive time remaining, ceil (e.g. 0.2 min => 1 min left)
+  if (diffMs >= 0) return Math.ceil(diffMs / 60000);
+
+  // ✅ For overdue, become negative immediately (e.g. -10s => -1 min overdue)
+  return -Math.ceil(Math.abs(diffMs) / 60000);
 }
 
 function isoPlusMinutes(mins) {
@@ -483,15 +491,7 @@ export default function TopRopesPage() {
       </div>
 
       {/* Body */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.55fr 1fr",
-          gap: 14,
-          marginTop: 12,
-          alignItems: "start",
-        }}
-      >
+      <div className="topBody">
         {/* LEFT column */}
         <div style={{ display: "grid", gap: 14 }}>
           {/* Coming Up Now */}
@@ -807,7 +807,7 @@ export default function TopRopesPage() {
         </div>
 
         {/* RIGHT column */}
-        <div style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "grid", marginTop: 14, gap: 14 }}>
           {/* Waitlist */}
           <section className="card">
             <div

@@ -105,6 +105,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .title {
@@ -197,6 +198,7 @@ select:focus-visible {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-card);
+  flex-wrap: wrap;
 }
 
 .item-main {
@@ -1117,4 +1119,64 @@ body.tv .client-display .client-nextname {
 html,
 body {
   overflow-x: hidden;
+}
+.item-split {
+  flex-wrap: wrap; /* stop random wrapping at ~900–1100px */
+  align-items: flex-start;
+}
+
+.item-split .item-main {
+  flex: 1 1 auto;
+  min-width: 0; /* text wraps instead of pushing actions */
+}
+
+.item-actions-row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row; /* actions flow horizontally */
+  flex-wrap: wrap; /* but wrap within actions */
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  max-width: 420px; /* prevents actions from stretching too far */
+}
+
+/* Arrow buttons stick together */
+.waiting-arrows {
+  flex-wrap: nowrap;
+}
+
+/* When the screen is truly small, allow stacking naturally */
+@media (max-width: 760px) {
+  .item-split {
+    flex-wrap: wrap;
+  }
+
+  .item-actions-row {
+    justify-content: flex-start;
+    max-width: none;
+    width: 100%;
+  }
+}
+.topBody {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 14px;
+  margin-top: 12px;
+  align-items: start;
+}
+.topBody .item {
+  width: 100%;
+}
+@media screen and (max-width: 1050px) {
+  .item.item-next {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .topBody {
+    display: block !important;
+  }
+}
+.waitlistCard {
+  margin-top: 12px;
 }

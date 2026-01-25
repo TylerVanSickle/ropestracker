@@ -63,11 +63,6 @@ export default function EditEntryModal({
 
   const [draft, setDraft] = useState(initialDraft);
 
-  // When you open a different entry, reset draft
-  useEffect(() => {
-    setDraft(initialDraft);
-  }, [initialDraft, safeEntry.id]);
-
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
   const [removeToken, setRemoveToken] = useState(0);
