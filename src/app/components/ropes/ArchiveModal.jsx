@@ -11,10 +11,10 @@ export default function ArchiveModal({
   onClose,
   onSubmit,
 }) {
-  // This lets us reset local state without using useEffect.
+  // Unique "session" per open + entry id
   const sessionKey = useMemo(() => {
     if (!open || !entry?.id) return "";
-    return `${entry.id}:${open ? "open" : "closed"}`;
+    return `${entry.id}:open`;
   }, [open, entry?.id]);
 
   const [drafts, setDrafts] = useState(() => ({
@@ -24,26 +24,41 @@ export default function ArchiveModal({
     mode: "REMOVE",
   }));
 
-  // Reset drafts when a new session begins (no effect; done during render safely with guard)
+  // ✅ Reset drafts when a new session begins (safe guard during render)
   if (open && entry?.id && drafts.sessionKey !== sessionKey) {
+    // Note: we set defaults based on props for this open-session
+    setDrafts({
+      sessionKey,
+      reason: String(initialReason || ""),
+      note: String(initialNote || ""),
+      mode: initialMode === "KEEP" ? "KEEP" : "REMOVE",
+    });
   }
-
-  const [reason, setReason] = useState(initialReason);
-  const [note, setNote] = useState(initialNote);
-  const [mode, setMode] = useState(initialMode);
 
   if (!open || !entry) return null;
 
   const party = Math.max(1, Number(entry.partySize || 1));
 
   function submit() {
-    const r = String(reason || "").trim();
-    const n = String(note || "").trim();
+    const r = String(drafts.reason || "").trim();
+    const n = String(drafts.note || "").trim();
+
     if (r.length < 3) {
       alert("Please enter a short reason.");
       return;
     }
-    onSubmit?.({ reason: r, note: n, mode });
+
+    onSubmit?.({ reason: r, note: n, mode: drafts.mode });
+
+    // ✅ Clear immediately so if modal stays mounted or reopens fast, it’s clean
+    setDrafts({
+      sessionKey: "",
+      reason: "",
+      note: "",
+      mode: "REMOVE",
+    });
+
+    onClose?.();
   }
 
   return (
@@ -96,8 +111,10 @@ export default function ArchiveModal({
             <span className="field-label">Reason (required)</span>
             <input
               className="input"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              value={drafts.reason}
+              onChange={(e) =>
+                setDrafts((d) => ({ ...d, reason: e.target.value }))
+              }
               placeholder="e.g., Disrespectful behavior"
               autoComplete="off"
             />
@@ -107,8 +124,10 @@ export default function ArchiveModal({
             <span className="field-label">Extra note (optional)</span>
             <input
               className="input"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              value={drafts.note}
+              onChange={(e) =>
+                setDrafts((d) => ({ ...d, note: e.target.value }))
+              }
               placeholder="e.g., Threatened staff, refused rules, etc."
               autoComplete="off"
             />
@@ -118,8 +137,10 @@ export default function ArchiveModal({
             <span className="field-label">Action</span>
             <select
               className="input"
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
+              value={drafts.mode}
+              onChange={(e) =>
+                setDrafts((d) => ({ ...d, mode: e.target.value }))
+              }
               style={{ padding: 10 }}
             >
               <option value="REMOVE">Archive + remove from active lists</option>
