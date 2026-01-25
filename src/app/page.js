@@ -35,6 +35,10 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
+// ✅ add this
+import { sendSms } from "@/app/lib/smsClient";
+import { buildNotifyMessage } from "@/app/lib/ropesMessage";
+
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
   const b = digitsOnlyMax(pin, LIMITS.staffPinMaxDigits);
@@ -67,6 +71,9 @@ export default function Home() {
 
   const [quoteSizeInput, setQuoteSizeInput] = useState("1");
   const [editingId, setEditingId] = useState(null);
+
+  // ✅ optional but helpful: track which entry is currently being notified
+  const [notifyBusyId, setNotifyBusyId] = useState(null);
 
   const refreshFromStorage = () => {
     setSettings(loadSettings());
@@ -203,8 +210,23 @@ export default function Home() {
     now,
   ]);
 
+  // ✅ UPDATED: Twilio notify (still falls back to clipboard if no phone)
   async function notifyGuest(entry) {
     if (!entry) return;
+
+    // Prevent double taps
+    if (notifyBusyId === entry.id) return;
+
+    // Cooldown (2 minutes)
+    const COOLDOWN_MS = 2 * 60 * 1000;
+    const last = entry.lastNotifiedAt
+      ? new Date(entry.lastNotifiedAt).getTime()
+      : 0;
+    if (last && Date.now() - last < COOLDOWN_MS) {
+      const minsLeft = Math.ceil((COOLDOWN_MS - (Date.now() - last)) / 60000);
+      alert(`Already notified recently. Try again in ~${minsLeft} min.`);
+      return;
+    }
 
     const est = estimateMap.get(entry.id);
     const estStart = est?.estStartISO ? new Date(est.estStartISO) : null;
@@ -212,22 +234,53 @@ export default function Home() {
       ? estStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
       : "soon";
 
-    const msg = `You're up next for the ropes course! Please return to check-in now.\nEstimated start: ${startText}`;
+    const msg = buildNotifyMessage({
+      entry,
+      estStartText: startText,
+    });
 
-    if (entry.phone) {
-      const href = buildSmsHref(entry.phone, msg);
-      if (href) {
-        window.location.href = href;
-        return;
-      }
+    // If they don't have a phone, keep old behavior: copy message
+    if (!entry.phone) {
+      const ok = await copyToClipboard(msg);
+      alert(ok ? "Message copied to clipboard." : "Could not copy message.");
+      return;
     }
 
-    const ok = await copyToClipboard(msg);
-    alert(
-      ok
-        ? "Notification message copied to clipboard."
-        : "Could not copy message.",
-    );
+    try {
+      setNotifyBusyId(entry.id);
+
+      // ✅ send via Twilio API route
+      await sendSms({ to: entry.phone, message: msg });
+
+      // ✅ update local entry so you can see "notified" state later (no DB needed)
+      setEntries((prev) =>
+        prev.map((e) => {
+          if (e.id !== entry.id) return e;
+          return {
+            ...e,
+            lastNotifiedAt: new Date().toISOString(),
+            notifiedCount: (e.notifiedCount || 0) + 1,
+          };
+        }),
+      );
+
+      alert("Text sent ✅");
+    } catch (e) {
+      // If Twilio fails, fall back to opening the phone SMS app (optional safety net)
+      // You can remove this fallback if you want strict Twilio-only behavior.
+      const href = buildSmsHref(entry.phone, msg);
+      if (href) {
+        const ok = confirm(
+          `Twilio failed (${e?.message || "error"}).\n\nOpen SMS app instead?`,
+        );
+        if (ok) window.location.href = href;
+        return;
+      }
+
+      alert(e?.message || "Failed to send text.");
+    } finally {
+      setNotifyBusyId(null);
+    }
   }
 
   function addGuest(e) {
