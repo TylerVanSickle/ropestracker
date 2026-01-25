@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   loadEntries,
   loadSettings,
@@ -54,6 +54,54 @@ export default function Home() {
   const [now, setNow] = useState(() => new Date());
 
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
+
+  // ✅ Toast (subtle "Added", etc.)
+  const [toast, setToast] = useState("");
+  const [toastVisible, setToastVisible] = useState(false); // controls mount
+  const [toastPhase, setToastPhase] = useState("out"); // "in" | "out"
+
+  const toastOutTimerRef = useRef(null);
+  const toastHideTimerRef = useRef(null);
+
+  function showToast(msg, holdMs = 1500) {
+    const text = String(msg || "").trim();
+    if (!text) return;
+
+    // clear any existing timers
+    if (toastOutTimerRef.current) clearTimeout(toastOutTimerRef.current);
+    if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
+
+    // IMPORTANT: mount it in the OUT position first (so enter animation works)
+    setToast(text);
+    setToastPhase("out");
+    setToastVisible(true);
+
+    // next frames -> slide IN (ensures browser sees the "out" state first)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setToastPhase("in");
+      });
+    });
+
+    // after hold -> slide OUT
+    toastOutTimerRef.current = setTimeout(() => {
+      setToastPhase("out");
+    }, holdMs);
+
+    // after animation -> unmount
+    toastHideTimerRef.current = setTimeout(() => {
+      setToastVisible(false);
+      setToast("");
+    }, holdMs + 280); // matches transition duration below
+  }
+
+  // cleanup on unmount (prevents stray timers in dev)
+  useEffect(() => {
+    return () => {
+      if (toastOutTimerRef.current) clearTimeout(toastOutTimerRef.current);
+      if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
+    };
+  }, []);
 
   // PIN gate
   const [authed, setAuthed] = useState(() => {
@@ -346,6 +394,9 @@ export default function Home() {
     });
 
     setNewGuest({ name: "", phone: "", partySize: 1, notes: "" });
+
+    // ✅ subtle confirmation (slide in + hold + slide out)
+    showToast("Guest added ✅", 1500);
   }
 
   function startGroup(id) {
@@ -641,6 +692,33 @@ export default function Home() {
           onRemove={remove}
           onComplete={completeGroup}
         />
+      ) : null}
+
+      {/* ✅ Toast (slides in, holds, slides out) */}
+      {toastVisible && toast ? (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            left: "50%",
+            transform:
+              toastPhase === "in"
+                ? "translateX(-50%) translateY(0)"
+                : "translateX(-50%) translateY(28px)", // starts lower
+            opacity: toastPhase === "in" ? 1 : 0,
+            transition: "transform 280ms ease, opacity 280ms ease",
+            background: "rgba(0,0,0,0.85)",
+            color: "#fff",
+            padding: "8px 14px",
+            borderRadius: 8,
+            fontSize: 13,
+            zIndex: 9999,
+            pointerEvents: "none",
+            willChange: "transform, opacity",
+          }}
+        >
+          {toast}
+        </div>
       ) : null}
     </main>
   );
