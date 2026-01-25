@@ -1,10 +1,10 @@
 // WaitingList.jsx
 "use client";
-
+import { useMemo } from "react";
 import { formatTime } from "@/app/lib/ropesStore";
 import { formatPhoneForTel, getWaitRangeText } from "@/app/lib/ropesUtils";
 
-export default function WaitlingList({
+export default function WaitingList({
   waiting,
   availableLines,
   estimateMap,
@@ -16,6 +16,12 @@ export default function WaitlingList({
   onNoShow,
   onRemove, // kept for compatibility
 }) {
+  const waitingLinesDemand = useMemo(() => {
+    return waiting.reduce(
+      (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+      0,
+    );
+  }, [waiting]);
   return (
     <div className="card">
       <div
@@ -25,6 +31,11 @@ export default function WaitlingList({
         <h2 className="section-title" style={{ margin: 0 }}>
           Waiting ({waiting.length})
         </h2>
+
+        <span className="muted" style={{ fontSize: 13 }}>
+          Demand: <strong>{waitingLinesDemand}</strong> line(s)
+        </span>
+
         <span className="muted" style={{ fontSize: 13 }}>
           You can reorder + edit anytime
         </span>

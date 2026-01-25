@@ -39,6 +39,9 @@ import {
 import { sendSms } from "@/app/lib/smsClient";
 import { buildNotifyMessage } from "@/app/lib/ropesMessage";
 
+// ✅ FIXED import (absolute path)
+import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
+
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
   const b = digitsOnlyMax(pin, LIMITS.staffPinMaxDigits);
@@ -93,6 +96,14 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ Backup: when you come back to this tab, refresh immediately
+  useEffect(() => {
+    const onFocus = () => refreshFromStorage();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ✅ tick only (NO auto-mutating entries)
   useEffect(() => {
     const t = setInterval(() => {
@@ -142,14 +153,25 @@ export default function Home() {
     [entries],
   );
 
-  const occupiedLines = active.reduce((sum, e) => sum + (e.linesUsed || 0), 0);
+  // ✅ SINGLE SOURCE OF TRUTH: partySize == sling lines in use
+  const occupiedLines = useMemo(() => {
+    return active.reduce(
+      (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+      0,
+    );
+  }, [active]);
+
   const availableLines = Math.max(0, settings.totalLines - occupiedLines);
 
   const nextWaiting = waiting.length ? waiting[0] : null;
   const nextNeeds = nextWaiting
     ? Math.max(1, Number(nextWaiting.partySize || 1))
     : null;
-  const nextCanStartNow = nextWaiting ? availableLines >= nextNeeds : false;
+
+  // ✅ IMPORTANT: flowPaused blocks starts
+  const nextCanStartNow = nextWaiting
+    ? availableLines >= nextNeeds && !Boolean(settings.flowPaused)
+    : false;
 
   const estimateMap = useMemo(() => {
     return computeEstimates({
@@ -313,6 +335,8 @@ export default function Home() {
           name,
           phone,
           partySize,
+          // keep legacy field in sync (harmless)
+          linesUsed: partySize,
           notes,
           status: "WAITING",
           createdAt: new Date().toISOString(),
@@ -325,6 +349,17 @@ export default function Home() {
   }
 
   function startGroup(id) {
+    // ✅ HARD BLOCK: read fresh settings at click time (works even if React state lags)
+    const s = loadSettings();
+    if (s.flowPaused) {
+      alert(
+        s.flowPauseReason
+          ? `Flow paused: ${s.flowPauseReason}`
+          : "Flow is currently Paused by the Top Operators",
+      );
+      return;
+    }
+
     const HOLD_MIN = settings.durationMin;
 
     setEntries((prev) => {
@@ -343,10 +378,13 @@ export default function Home() {
       }
 
       const activePrev = prev.filter((e) => e.status === "UP");
+
+      // ✅ SINGLE SOURCE OF TRUTH: partySize == sling lines in use
       const occupiedPrev = activePrev.reduce(
-        (sum, e) => sum + (e.linesUsed || 0),
+        (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
         0,
       );
+
       const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
 
       const linesNeeded = Math.max(1, Number(front.partySize || 1));
@@ -372,7 +410,8 @@ export default function Home() {
         return {
           ...e,
           status: "UP",
-          linesUsed: linesNeeded,
+          partySize: linesNeeded,
+          linesUsed: linesNeeded, // keep legacy field in sync
           startedAt: nowISO,
           sentUpAt: nowISO,
           coursePhase: "SENT",
@@ -385,7 +424,9 @@ export default function Home() {
   function completeGroup(id) {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-      return prev.map((e) => (e.id === id ? { ...e, status: "DONE" } : e));
+      return prev.map((e) =>
+        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e,
+      );
     });
   }
 
@@ -438,9 +479,16 @@ export default function Home() {
   }, [editingId, entries]);
 
   function saveEdit(updated) {
+    // ✅ make absolutely sure the invariant holds even if some other screen edits
+    const coerced = {
+      ...updated,
+      partySize: Math.max(1, Number(updated.partySize || 1)),
+    };
+    coerced.linesUsed = coerced.partySize;
+
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-      return prev.map((e) => (e.id === updated.id ? updated : e));
+      return prev.map((e) => (e.id === coerced.id ? coerced : e));
     });
     setEditingId(null);
   }
@@ -535,6 +583,9 @@ export default function Home() {
         onOpenPrint={openPrint}
       />
 
+      {/* ✅ Styled + live banner */}
+      <FlowPausedBanner settings={settings} />
+
       <QuickQuote
         quoteSizeInput={quoteSizeInput}
         setQuoteSizeInput={setQuoteSizeInput}
@@ -570,6 +621,7 @@ export default function Home() {
           onStart={startGroup}
           onRemove={remove}
         />
+
         <UpNowList
           active={active}
           now={now}

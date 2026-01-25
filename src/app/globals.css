@@ -104,7 +104,6 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -1179,4 +1178,47 @@ body {
 }
 .waitlistCard {
   margin-top: 12px;
+}
+@media screen and (max-width: 430) {
+  .card {
+    display: block !important;
+    width: 100% !important;
+  }
+}
+.button-warning {
+  border-color: rgba(255, 193, 7, 0.45);
+  background: rgba(255, 193, 7, 0.18);
+}
+.topbarRow2 {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.topbarStatusCard {
+  margin-left: auto; /* push to the right */
+  min-width: 320px;
+}
+
+/* ✅ stack at 900px and below */
+@media (max-width: 900px) {
+  .topbarRow2 {
+    flex-direction: column;
+  }
+
+  .topbarStatusCard {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+@media (max-width: 900px) {
+  .topbarStatusCard {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+a {
+  text-decoration: none;
 }

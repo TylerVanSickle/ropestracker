@@ -11,7 +11,6 @@ export default function ArchiveModal({
   onClose,
   onSubmit,
 }) {
-  // Create a stable "session key" each time a new open+entry happens.
   // This lets us reset local state without using useEffect.
   const sessionKey = useMemo(() => {
     if (!open || !entry?.id) return "";
@@ -27,18 +26,7 @@ export default function ArchiveModal({
 
   // Reset drafts when a new session begins (no effect; done during render safely with guard)
   if (open && entry?.id && drafts.sessionKey !== sessionKey) {
-    // NOTE: this is still a state write during render, which React generally discourages,
-    // so instead we'll do it via a lazy init pattern below. To avoid that, we can keep it pure:
   }
-
-  // ✅ Pure approach: derive UI state from a "controlled seed" + user edits
-  // We'll keep "seed" in state only when first opened, via an "Open" button in parent.
-  // So this component should NOT try to reset itself.
-  // Therefore: treat initialReason/Note/Mode as the source on first mount only is not reliable.
-  // Best: parent passes "key" prop to force remount each open.
-
-  // So: simplest + best: rely on parent <ArchiveModal key={modalKey} ... />
-  // The component below just uses local state normally.
 
   const [reason, setReason] = useState(initialReason);
   const [note, setNote] = useState(initialNote);
