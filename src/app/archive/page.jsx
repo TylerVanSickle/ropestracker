@@ -17,7 +17,7 @@ export default function ArchivePage() {
     return () => unsub?.();
   }, []);
 
-  const records = useMemo(() => loadFlagArchive(), []);
+  const records = loadFlagArchive();
 
   return (
     <main className="container">
@@ -143,6 +143,7 @@ export default function ArchivePage() {
                       onClick={() => {
                         if (!confirm("Delete this archive record?")) return;
                         deleteArchiveRecord(r.id);
+                        setTick((x) => x + 1);
                       }}
                     >
                       Delete Record
