@@ -1,4 +1,3 @@
-// UpNowList.jsx
 "use client";
 
 import { formatTime } from "@/app/lib/ropesStore";
@@ -17,14 +16,24 @@ function getPhaseLabel(e) {
   if (raw === "ON_COURSE") return "ON COURSE";
   return "ON COURSE";
 }
-function timeDangerStyle({ secsLeft, totalMins = 35 }) {
-  if (secsLeft == null) return null;
+
+// Uses remaining seconds for warning styling (0..total)
+function timeDangerStyle({ secsRemaining, totalMins = 35, isOverdue = false }) {
+  if (secsRemaining == null) return null;
+
+  // 🔥 If overdue, go full danger
+  if (isOverdue) {
+    return {
+      background: `rgba(255, 59, 48, 0.22)`,
+      borderLeft: `6px solid rgba(255, 59, 48, 0.9)`,
+      animation: "dangerPulse 1.1s ease-in-out infinite",
+    };
+  }
 
   const totalSecs = totalMins * 60;
-  const clamped = Math.max(0, Math.min(totalSecs, secsLeft));
+  const clamped = Math.max(0, Math.min(totalSecs, secsRemaining));
   const progress = clamped / totalSecs;
 
-  // No warning in first half
   if (progress > 0.43) return null;
 
   const danger = (0.5 - progress) / 0.5;
@@ -37,23 +46,27 @@ function timeDangerStyle({ secsLeft, totalMins = 35 }) {
     borderLeft: `6px solid rgba(255, 59, 48, ${borderAlpha})`,
   };
 
-  // 🔥 Pulse when < 3 minutes
-  if (secsLeft <= 60) {
+  if (secsRemaining <= 60)
     style.animation = "dangerPulse 1s ease-in-out infinite";
-  } else if (secsLeft <= 180) {
+  else if (secsRemaining <= 180)
     style.animation = "dangerPulse 1.6s ease-in-out infinite";
-  } else if (secsLeft <= 300) {
+  else if (secsRemaining <= 300)
     style.animation = "dangerPulse 2.4s ease-in-out infinite";
-  }
 
   return style;
+}
+
+function mmssFromSeconds(absSecs) {
+  const mins = Math.floor(absSecs / 60);
+  const secs = absSecs % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 export default function UpNowList({
   active = [],
   now = new Date(),
-  onComplete = () => {}, // kept for compatibility (now triggered via Edit modal)
-  onRemove = () => {}, // kept for compatibility (now triggered via Edit modal)
+  onComplete = () => {},
+  onRemove = () => {},
   onCopy = () => {},
   onEdit = () => {},
 }) {
@@ -69,13 +82,25 @@ export default function UpNowList({
         ) : (
           safeActive.map((e) => {
             const endMs = e.endTime ? new Date(e.endTime).getTime() : null;
-            const secsLeft = endMs
-              ? Math.max(0, Math.floor((endMs - now.getTime()) / 1000))
-              : null;
-            const mins = secsLeft !== null ? Math.floor(secsLeft / 60) : null;
-            const secs = secsLeft !== null ? secsLeft % 60 : null;
+
+            // ✅ can be negative (overdue)
+            const secsDiff =
+              endMs != null && Number.isFinite(endMs)
+                ? Math.floor((endMs - now.getTime()) / 1000)
+                : null;
+
+            const isOverdue = secsDiff != null ? secsDiff < 0 : false;
+            const secsRemaining =
+              secsDiff != null ? Math.max(0, secsDiff) : null;
 
             const phaseLabel = getPhaseLabel(e);
+
+            const timeText =
+              secsDiff == null
+                ? null
+                : isOverdue
+                  ? `OVERDUE ${mmssFromSeconds(Math.abs(secsDiff))}`
+                  : mmssFromSeconds(secsDiff);
 
             return (
               <div
@@ -83,8 +108,9 @@ export default function UpNowList({
                 className="item"
                 style={{
                   ...(timeDangerStyle({
-                    secsLeft,
+                    secsRemaining,
                     totalMins: Number(e.topDurationMin || 35),
+                    isOverdue,
                   }) || {}),
                 }}
               >
@@ -98,15 +124,17 @@ export default function UpNowList({
                     {e.assignedTag ? (
                       <span className="pill">{e.assignedTag}</span>
                     ) : null}
+                    {isOverdue ? <span className="pill">OVERDUE</span> : null}
                   </div>
 
                   <div className="muted item-sub">
-                    Ends: <strong>{formatTime(e.endTime)}</strong>{" "}
-                    {secsLeft !== null ? (
+                    Ends: <strong>{formatTime(e.endTime)}</strong>
+                    {timeText ? (
                       <>
-                        • Time left:{" "}
-                        <strong>
-                          {mins}:{String(secs).padStart(2, "0")}
+                        {" "}
+                        •{" "}
+                        <strong style={{ letterSpacing: 0.2 }}>
+                          {isOverdue ? timeText : `Time left: ${timeText}`}
                         </strong>
                       </>
                     ) : null}
@@ -145,8 +173,6 @@ export default function UpNowList({
                   >
                     Edit
                   </button>
-
-                  {/* Complete + Remove moved into Edit modal "Danger zone" */}
                 </div>
               </div>
             );

@@ -12,9 +12,9 @@ export default function WaitlingList({
   onMoveUp,
   onMoveDown,
   onNotify,
-  onStart, // now means "Send Up" (reserve lines + mark coming up)
+  onStart, // "Send Up"
   onNoShow,
-  onRemove, // (kept for compatibility, but not used here anymore)
+  onRemove, // kept for compatibility
 }) {
   return (
     <div className="card">
@@ -54,7 +54,10 @@ export default function WaitlingList({
               est?.estWaitMin != null ? getWaitRangeText(est.estWaitMin) : "—";
 
             return (
-              <div key={e.id} className={`item ${isFront ? "item-next" : ""}`}>
+              <div
+                key={e.id}
+                className={`item item-split ${isFront ? "item-next" : ""}`}
+              >
                 <div className="item-main">
                   <div className="item-title">
                     #{idx + 1} {e.name}{" "}
@@ -98,7 +101,7 @@ export default function WaitlingList({
                   ) : null}
                 </div>
 
-                <div className="item-actions">
+                <div className="item-actions item-actions-row">
                   <button
                     className="button"
                     onClick={() => onEdit(e.id)}
@@ -107,7 +110,7 @@ export default function WaitlingList({
                     Edit
                   </button>
 
-                  <div className="row" style={{ gap: 8 }}>
+                  <div className="row waiting-arrows" style={{ gap: 8 }}>
                     <button
                       className="button"
                       onClick={() => onMoveUp(e.id)}
@@ -149,8 +152,6 @@ export default function WaitlingList({
                   >
                     Send Up
                   </button>
-
-                  {/* Remove moved into Edit modal "Danger zone" */}
                 </div>
               </div>
             );

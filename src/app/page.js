@@ -86,36 +86,16 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // tick + auto-complete expired runs
+  // ✅ tick only (NO auto-mutating entries)
   useEffect(() => {
     const t = setInterval(() => {
-      const current = new Date();
-      setNow(current);
-      const nowMs = current.getTime();
-
-      setEntries((prev) => {
-        let changed = false;
-        const next = prev.map((e) => {
-          if (e.status !== "UP") return e;
-          if (!e.endTime) return e;
-
-          const endMs = new Date(e.endTime).getTime();
-          if (!Number.isFinite(endMs)) return e;
-
-          if (endMs <= nowMs) {
-            changed = true;
-            return { ...e, status: "DONE" };
-          }
-          return e;
-        });
-
-        return changed ? next : prev;
-      });
+      setNow(new Date());
     }, 1000);
 
     return () => clearInterval(t);
   }, []);
 
+  // persist on actual edits only (buttons, modals, etc)
   useEffect(() => {
     saveEntries(entries);
   }, [entries]);
@@ -439,9 +419,7 @@ export default function Home() {
   }
 
   if (requiresPin && !authed) {
-    if (!hydrated) {
-      return <main className="container" />;
-    }
+    if (!hydrated) return <main className="container" />;
 
     return (
       <main className="container">
@@ -506,6 +484,7 @@ export default function Home() {
         setNewGuest={setNewGuest}
         onAddGuest={addGuest}
       />
+
       <NextUpActions
         nextWaiting={nextWaiting}
         nextEstStartText={nextEstStartText}
