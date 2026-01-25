@@ -210,7 +210,7 @@ export default function Home() {
     now,
   ]);
 
-  // ✅ UPDATED: Twilio notify (still falls back to clipboard if no phone)
+  // ✅ UPDATED: Twilio notify (graceful when SMS isn't connected)
   async function notifyGuest(entry) {
     if (!entry) return;
 
@@ -266,18 +266,27 @@ export default function Home() {
 
       alert("Text sent ✅");
     } catch (e) {
-      // If Twilio fails, fall back to opening the phone SMS app (optional safety net)
-      // You can remove this fallback if you want strict Twilio-only behavior.
+      const err = String(e?.message || "");
+
+      // 🚧 Twilio not connected / blocked by compliance (ex: 30032, 30034)
+      if (
+        err.includes("30032") ||
+        err.includes("30034") ||
+        err.includes("3003")
+      ) {
+        alert("SMS is currently unavailable (pending carrier approval).");
+        return;
+      }
+
+      // Optional fallback: open phone SMS app
       const href = buildSmsHref(entry.phone, msg);
       if (href) {
-        const ok = confirm(
-          `Twilio failed (${e?.message || "error"}).\n\nOpen SMS app instead?`,
-        );
+        const ok = confirm("SMS failed.\n\nOpen your phone’s SMS app instead?");
         if (ok) window.location.href = href;
         return;
       }
 
-      alert(e?.message || "Failed to send text.");
+      alert("Failed to send text.");
     } finally {
       setNotifyBusyId(null);
     }
