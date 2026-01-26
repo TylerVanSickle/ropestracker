@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   loadEntries,
@@ -17,6 +17,7 @@ import { COURSE_TAG_LABELS } from "../lib/ropesTags";
 
 import ArchiveModal from "@/app/components/ropes/ArchiveModal";
 import ConfirmModal from "@/app/components/ropes/ConfirmModal";
+import AlertToast from "@/app/components/ropes/AlertToast";
 
 import TopHeader from "./components/TopHeader";
 import ComingUpSection from "./components/ComingUpSection";
@@ -38,6 +39,21 @@ export default function TopRopesPage() {
 
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showAllSent, setShowAllSent] = useState(false);
+
+  // ✅ Toast (with tone)
+  const [toastKey, setToastKey] = useState(0);
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastTone, setToastTone] = useState("info"); // success|warning|info
+  const toastClearRef = useRef(null);
+
+  function showToast(msg, tone = "info") {
+    setToastMsg(String(msg || "").trim());
+    setToastTone(tone);
+    setToastKey((k) => k + 1);
+
+    if (toastClearRef.current) clearTimeout(toastClearRef.current);
+    toastClearRef.current = setTimeout(() => setToastMsg(""), 1800);
+  }
 
   // Edit modal state
   const [editingId, setEditingId] = useState(null);
@@ -65,9 +81,7 @@ export default function TopRopesPage() {
       setEntries(loadEntries());
     };
 
-    // initial sync (optional but nice)
     refresh();
-
     const unsub = subscribeToRopesStorage(refresh);
 
     const onFocus = () => refresh();
@@ -90,13 +104,13 @@ export default function TopRopesPage() {
     () => getDerived(entries, settings),
     [entries, settings],
   );
-  const { waiting, up, sentUp, onCourse, availableLines, totalLines } = derived;
+  const { waiting, sentUp, onCourse, availableLines, totalLines } = derived;
 
   const closed = Boolean(settings?.paused);
 
   const availableTagsGlobal = useMemo(
-    () => getAvailableTags(up, COURSE_TAG_LABELS),
-    [up],
+    () => getAvailableTags(sentUp, COURSE_TAG_LABELS),
+    [sentUp],
   );
 
   function setLocalEntries(nextEntries) {
@@ -111,6 +125,7 @@ export default function TopRopesPage() {
   function handleAssignTag(entryId, tag) {
     const nextEntries = patchEntry(entryId, { assignedTag: tag || null });
     setLocalEntries(nextEntries);
+    // optional: showToast("Tag saved ✅", "success");
   }
 
   function handleStartCourse(entry) {
@@ -156,6 +171,7 @@ export default function TopRopesPage() {
     const nextEntries = markEntryDone(finishEntry.id);
     setLocalEntries(nextEntries);
     closeFinishConfirm();
+    // optional: showToast("Finished ✅", "success");
   }
 
   function handleFinish(entry) {
@@ -204,6 +220,10 @@ export default function TopRopesPage() {
     });
 
     setLocalEntries(nextEntries);
+
+    // ✅ GREEN save
+    showToast("Saved ✅", "success");
+
     closeEdit();
   }
 
@@ -253,6 +273,7 @@ export default function TopRopesPage() {
     });
     setLocalEntries(nextEntries);
     clearMerge();
+    // optional: showToast("Merged ✅", "success");
   }
 
   // ===== Archive Modal =====
@@ -279,7 +300,6 @@ export default function TopRopesPage() {
     const combined = n ? `${r} • Note: ${n}` : r;
     const removeFromActive = String(mode) !== "KEEP";
 
-    // ✅ Persist archive record
     archiveFlaggedEntry({
       entryId: archiveEntry.id,
       archivedBy: "top",
@@ -287,19 +307,27 @@ export default function TopRopesPage() {
       removeFromActive,
     });
 
-    // ✅ Immediately update UI (NO refresh)
     if (removeFromActive) {
       setEntries((prev) => prev.filter((e) => e.id !== archiveEntry.id));
     }
 
-    // cleanup merge selection
     setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
-
     closeArchive();
+
+    // optional: showToast("Archived ✅", "success");
   }
 
   return (
     <main className="page" style={{ padding: "14px 14px 28px" }}>
+      {/* ✅ Toast (top-right slide) */}
+      <AlertToast
+        toastKey={toastKey}
+        message={toastMsg}
+        tone={toastTone}
+        durationMs={1600}
+        side="right"
+      />
+
       <TopHeader
         closed={closed}
         availableLines={availableLines}
@@ -310,9 +338,7 @@ export default function TopRopesPage() {
         settings={settings}
       />
 
-      {/* Body */}
       <div className="topBody">
-        {/* LEFT column */}
         <div style={{ display: "grid", gap: 14 }}>
           <ComingUpSection
             sentUp={sentUp}
@@ -344,7 +370,6 @@ export default function TopRopesPage() {
           />
         </div>
 
-        {/* RIGHT column */}
         <div style={{ display: "grid", marginTop: 14, gap: 14 }}>
           <WaitlistSection
             waiting={waiting}
@@ -352,12 +377,10 @@ export default function TopRopesPage() {
             showAllWaiting={showAllWaiting}
             setShowAllWaiting={setShowAllWaiting}
           />
-
           <OperatorNotesSection />
         </div>
       </div>
 
-      {/* Finish Confirm Modal */}
       <ConfirmModal
         open={finishConfirmOpen}
         title="Finish group?"
@@ -373,7 +396,6 @@ export default function TopRopesPage() {
         onConfirm={confirmFinish}
       />
 
-      {/* Archive Modal */}
       <ArchiveModal
         open={archiveOpen}
         entry={archiveEntry}
@@ -381,7 +403,6 @@ export default function TopRopesPage() {
         onSubmit={handleArchiveSubmit}
       />
 
-      {/* Edit Modal */}
       <EditGroupModal
         open={Boolean(editingId)}
         editDraft={editDraft}

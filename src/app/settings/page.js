@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   loadSettings,
   saveSettings,
@@ -9,17 +9,16 @@ import {
   clearStaffAuth,
 } from "@/app/lib/ropesStore";
 
+import AlertToast from "@/app/components/ropes/AlertToast";
+import ConfirmModal from "@/app/components/ropes/ConfirmModal";
+
 const SESSION_KEY = "settings_authed_v1";
 
 export default function SettingsPage() {
-  // 🔒 SETTINGS PASSWORD (client-readable)
   const REQUIRED_PASS = process.env.NEXT_PUBLIC_SETTINGS_PASS;
 
-  // ✅ Derive initial auth without an effect (fixes ESLint set-state-in-effect)
   const [authed, setAuthed] = useState(() => {
-    // If no password configured, treat as unlocked
     if (!REQUIRED_PASS) return true;
-
     try {
       return sessionStorage.getItem(SESSION_KEY) === "true";
     } catch {
@@ -32,6 +31,24 @@ export default function SettingsPage() {
 
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
+
+  // ✅ Toast (with tone)
+  const [toastKey, setToastKey] = useState(0);
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastTone, setToastTone] = useState("info");
+  const toastClearRef = useRef(null);
+
+  function showToast(msg, tone = "info") {
+    setToastMsg(String(msg || "").trim());
+    setToastTone(tone);
+    setToastKey((k) => k + 1);
+
+    if (toastClearRef.current) clearTimeout(toastClearRef.current);
+    toastClearRef.current = setTimeout(() => setToastMsg(""), 1800);
+  }
+
+  // ✅ Reset confirm modal
+  const [resetOpen, setResetOpen] = useState(false);
 
   function submitPassword(e) {
     e.preventDefault();
@@ -107,7 +124,6 @@ export default function SettingsPage() {
     settings.staffPin,
   ]);
 
-  // 🔒 Gate UI (after hooks)
   if (!authed) {
     return (
       <main className="container" style={{ maxWidth: 520 }}>
@@ -205,11 +221,15 @@ export default function SettingsPage() {
 
   function onSave() {
     saveSettings(clamped);
+
     setSavedMsg("Saved ✅");
     setTimeout(() => setSavedMsg(""), 1500);
+
+    // ✅ GREEN toast
+    showToast("Saved ✅", "success");
   }
 
-  function onReset() {
+  function doResetNow() {
     const defaults = {
       totalLines: MAX_SLING_LINES,
       durationMin: 45,
@@ -219,21 +239,36 @@ export default function SettingsPage() {
       clientTheme: "auto",
       staffPin: "",
     };
+
     setSettings(defaults);
     saveSettings(defaults);
     clearStaffAuth();
+
     setSavedMsg("Reset ✅");
     setTimeout(() => setSavedMsg(""), 1500);
+
+    showToast("Reset ✅", "warning");
   }
 
   function logoutStaff() {
     clearStaffAuth();
+
     setSavedMsg("Staff logged out ✅");
     setTimeout(() => setSavedMsg(""), 1500);
+
+    showToast("Staff logged out ✅", "info");
   }
 
   return (
     <main className="container">
+      <AlertToast
+        toastKey={toastKey}
+        message={toastMsg}
+        tone={toastTone}
+        durationMs={1600}
+        side="right"
+      />
+
       <div className="topbar">
         <div>
           <h1 className="title">Settings</h1>
@@ -247,12 +282,20 @@ export default function SettingsPage() {
           <Link className="button" href="/">
             Back
           </Link>
-          <button className="button" onClick={onReset} type="button">
+
+          {/* ✅ now confirms */}
+          <button
+            className="button"
+            onClick={() => setResetOpen(true)}
+            type="button"
+          >
             Reset
           </button>
+
           <button className="button" onClick={logoutStaff} type="button">
             Log out staff
           </button>
+
           <button
             className="button button-primary"
             onClick={onSave}
@@ -465,6 +508,21 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* ✅ Confirm reset */}
+      <ConfirmModal
+        open={resetOpen}
+        title="Reset settings?"
+        message="This will restore defaults and log out staff."
+        confirmText="Reset"
+        cancelText="Cancel"
+        tone="danger"
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => {
+          setResetOpen(false);
+          doResetNow();
+        }}
+      />
     </main>
   );
 }
