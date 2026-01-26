@@ -35,13 +35,19 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
-// ✅ add this
+// add this
 import { sendSms } from "@/app/lib/smsClient";
 import { buildNotifyMessage } from "@/app/lib/ropesMessage";
 
-// ✅ FIXED import (absolute path)
+// FIXED import (absolute path)
 import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
 import CourseClosedBanner from "./components/ropes/CourseClosedBanner";
+
+// NEW: alerts engine
+import { computeAlerts } from "@/app/lib/alerts";
+
+// ✅ NEW: CSS-based alert toast (tinted)
+import AlertToast from "@/app/components/ropes/AlertToast";
 
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
@@ -56,13 +62,16 @@ export default function Home() {
 
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
 
-  // ✅ Toast (subtle "Added", etc.)
+  // ✅ Bottom Toast (subtle "Added", etc.)
   const [toast, setToast] = useState("");
   const [toastVisible, setToastVisible] = useState(false); // controls mount
   const [toastPhase, setToastPhase] = useState("out"); // "in" | "out"
 
   const toastOutTimerRef = useRef(null);
   const toastHideTimerRef = useRef(null);
+
+  // Must be >= your longest transition duration
+  const TOAST_ANIM_MS = 280;
 
   function showToast(msg, holdMs = 1500) {
     const text = String(msg || "").trim();
@@ -93,7 +102,7 @@ export default function Home() {
     toastHideTimerRef.current = setTimeout(() => {
       setToastVisible(false);
       setToast("");
-    }, holdMs + 280); // matches transition duration below
+    }, holdMs + TOAST_ANIM_MS);
   }
 
   // cleanup on unmount (prevents stray timers in dev)
@@ -103,6 +112,10 @@ export default function Home() {
       if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
     };
   }, []);
+
+  // ✅ Overdue alert toast state (CSS-based)
+  const [alertToastKey, setAlertToastKey] = useState("");
+  const [alertToastMsg, setAlertToastMsg] = useState("");
 
   // PIN gate
   const [authed, setAuthed] = useState(() => {
@@ -124,7 +137,7 @@ export default function Home() {
   const [quoteSizeInput, setQuoteSizeInput] = useState("1");
   const [editingId, setEditingId] = useState(null);
 
-  // ✅ optional but helpful: track which entry is currently being notified
+  // optional but helpful: track which entry is currently being notified
   const [notifyBusyId, setNotifyBusyId] = useState(null);
 
   const refreshFromStorage = () => {
@@ -145,7 +158,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Backup: when you come back to this tab, refresh immediately
+  // Backup: when you come back to this tab, refresh immediately
   useEffect(() => {
     const onFocus = () => refreshFromStorage();
     window.addEventListener("focus", onFocus);
@@ -153,7 +166,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ tick only (NO auto-mutating entries)
+  // tick only (NO auto-mutating entries)
   useEffect(() => {
     const t = setInterval(() => {
       setNow(new Date());
@@ -202,7 +215,7 @@ export default function Home() {
     [entries],
   );
 
-  // ✅ SINGLE SOURCE OF TRUTH: partySize == sling lines in use
+  // SINGLE SOURCE OF TRUTH: partySize == sling lines in use
   const occupiedLines = useMemo(() => {
     return active.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
@@ -217,7 +230,7 @@ export default function Home() {
     ? Math.max(1, Number(nextWaiting.partySize || 1))
     : null;
 
-  // ✅ IMPORTANT: flowPaused blocks starts
+  // IMPORTANT: flowPaused blocks starts
   const nextCanStartNow = nextWaiting
     ? availableLines >= nextNeeds && !Boolean(settings.flowPaused)
     : false;
@@ -281,7 +294,33 @@ export default function Home() {
     now,
   ]);
 
-  // ✅ UPDATED: Twilio notify (graceful when SMS isn't connected)
+  // ✅ Overdue alert loop (uses CSS AlertToast now)
+  const overdueShownRef = useRef({}); // { [entryId]: lastShownMs }
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const alerts = computeAlerts({ entries, nowMs: Date.now() });
+      const firstOverdue = alerts.find((a) => a.type === "OVERDUE_GROUP");
+      if (!firstOverdue) return;
+
+      const id = firstOverdue.entryId;
+      const nowMs = Date.now();
+      const lastShown = overdueShownRef.current[id] ?? 0;
+
+      // Throttle: show same group's overdue banner max once per 3 minutes
+      if (nowMs - lastShown < 3 * 60 * 1000) return;
+
+      overdueShownRef.current[id] = nowMs;
+
+      // ✅ trigger CSS toast animation
+      setAlertToastMsg(firstOverdue.message);
+      setAlertToastKey(`${id}:${nowMs}`);
+    }, 20000);
+
+    return () => clearInterval(t);
+  }, [entries]);
+
+  // UPDATED: Twilio notify (graceful when SMS isn't connected)
   async function notifyGuest(entry) {
     if (!entry) return;
 
@@ -320,10 +359,10 @@ export default function Home() {
     try {
       setNotifyBusyId(entry.id);
 
-      // ✅ send via Twilio API route
+      // send via Twilio API route
       await sendSms({ to: entry.phone, message: msg });
 
-      // ✅ update local entry so you can see "notified" state later (no DB needed)
+      // update local entry so you can see "notified" state later (no DB needed)
       setEntries((prev) =>
         prev.map((e) => {
           if (e.id !== entry.id) return e;
@@ -335,11 +374,10 @@ export default function Home() {
         }),
       );
 
-      alert("Text sent ✅");
+      alert("Text sent");
     } catch (e) {
       const err = String(e?.message || "");
 
-      // 🚧 Twilio not connected / blocked by compliance (ex: 30032, 30034)
       if (
         err.includes("30032") ||
         err.includes("30034") ||
@@ -349,7 +387,6 @@ export default function Home() {
         return;
       }
 
-      // Optional fallback: open phone SMS app
       const href = buildSmsHref(entry.phone, msg);
       if (href) {
         const ok = confirm("SMS failed.\n\nOpen your phone’s SMS app instead?");
@@ -384,7 +421,6 @@ export default function Home() {
           name,
           phone,
           partySize,
-          // keep legacy field in sync (harmless)
           linesUsed: partySize,
           notes,
           status: "WAITING",
@@ -396,12 +432,10 @@ export default function Home() {
 
     setNewGuest({ name: "", phone: "", partySize: 1, notes: "" });
 
-    // ✅ subtle confirmation (slide in + hold + slide out)
-    showToast("Guest added ✅", 1500);
+    showToast("Guest added", 1500);
   }
 
   function startGroup(id) {
-    // ✅ HARD BLOCK: read fresh settings at click time (works even if React state lags)
     const s = loadSettings();
     if (s.flowPaused) {
       alert(
@@ -431,7 +465,6 @@ export default function Home() {
 
       const activePrev = prev.filter((e) => e.status === "UP");
 
-      // ✅ SINGLE SOURCE OF TRUTH: partySize == sling lines in use
       const occupiedPrev = activePrev.reduce(
         (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
         0,
@@ -463,7 +496,7 @@ export default function Home() {
           ...e,
           status: "UP",
           partySize: linesNeeded,
-          linesUsed: linesNeeded, // keep legacy field in sync
+          linesUsed: linesNeeded,
           startedAt: nowISO,
           sentUpAt: nowISO,
           coursePhase: "SENT",
@@ -531,7 +564,6 @@ export default function Home() {
   }, [editingId, entries]);
 
   function saveEdit(updated) {
-    // ✅ make absolutely sure the invariant holds even if some other screen edits
     const coerced = {
       ...updated,
       partySize: Math.max(1, Number(updated.partySize || 1)),
@@ -547,7 +579,7 @@ export default function Home() {
 
   function doArchiveToday() {
     const key = archiveToday({ entries, settings });
-    alert(key ? "Archived ✅" : "Could not archive.");
+    alert(key ? "Archived" : "Could not archive.");
   }
 
   function openClient() {
@@ -621,6 +653,27 @@ export default function Home() {
     );
   }
 
+  // ✅ bottom toast style only (no right-variant anymore)
+  const toastStyle = {
+    position: "fixed",
+    bottom: 20,
+    left: "50%",
+    transform:
+      toastPhase === "in"
+        ? "translateX(-50%) translateY(0)"
+        : "translateX(-50%) translateY(28px)",
+    opacity: toastPhase === "in" ? 1 : 0,
+    transition: "transform 280ms ease, opacity 280ms ease",
+    background: "rgba(0,0,0,0.85)",
+    color: "#fff",
+    padding: "8px 14px",
+    borderRadius: 8,
+    fontSize: 13,
+    zIndex: 9999,
+    pointerEvents: "none",
+    willChange: "transform, opacity",
+  };
+
   return (
     <main className="container">
       <Topbar
@@ -635,7 +688,6 @@ export default function Home() {
         onOpenPrint={openPrint}
       />
 
-      {/* ✅ Styled + live banner */}
       <FlowPausedBanner settings={settings} />
       <CourseClosedBanner settings={settings} />
 
@@ -696,32 +748,16 @@ export default function Home() {
         />
       ) : null}
 
-      {/* ✅ Toast (slides in, holds, slides out) */}
-      {toastVisible && toast ? (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 20,
-            left: "50%",
-            transform:
-              toastPhase === "in"
-                ? "translateX(-50%) translateY(0)"
-                : "translateX(-50%) translateY(28px)", // starts lower
-            opacity: toastPhase === "in" ? 1 : 0,
-            transition: "transform 280ms ease, opacity 280ms ease",
-            background: "rgba(0,0,0,0.85)",
-            color: "#fff",
-            padding: "8px 14px",
-            borderRadius: 8,
-            fontSize: 13,
-            zIndex: 9999,
-            pointerEvents: "none",
-            willChange: "transform, opacity",
-          }}
-        >
-          {toast}
-        </div>
-      ) : null}
+      {/* ✅ Overdue warning toast (tinted via globals.css) */}
+      <AlertToast
+        toastKey={alertToastKey}
+        message={alertToastMsg}
+        durationMs={2600}
+        side="right"
+      />
+
+      {/* ✅ Bottom toast (guest added) */}
+      {toastVisible && toast ? <div style={toastStyle}>{toast}</div> : null}
     </main>
   );
 }

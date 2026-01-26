@@ -24,7 +24,7 @@ export default function ArchiveModal({
     mode: "REMOVE",
   }));
 
-  // ✅ Reset drafts when a new session begins (safe guard during render)
+  // Reset drafts when a new session begins (safe guard during render)
   if (open && entry?.id && drafts.sessionKey !== sessionKey) {
     // Note: we set defaults based on props for this open-session
     setDrafts({
@@ -50,7 +50,7 @@ export default function ArchiveModal({
 
     onSubmit?.({ reason: r, note: n, mode: drafts.mode });
 
-    // ✅ Clear immediately so if modal stays mounted or reopens fast, it’s clean
+    // Clear immediately so if modal stays mounted or reopens fast, it’s clean
     setDrafts({
       sessionKey: "",
       reason: "",

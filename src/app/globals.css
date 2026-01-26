@@ -1202,7 +1202,7 @@ body {
   min-width: 320px;
 }
 
-/* ✅ stack at 900px and below */
+/* stack at 900px and below */
 @media (max-width: 900px) {
   .topbarRow2 {
     flex-direction: column;
@@ -1221,4 +1221,57 @@ body {
 
 a {
   text-decoration: none;
+}
+/* ALERT TOASTS */
+.alert-toast {
+  position: fixed;
+  top: 84px;
+  z-index: 9999;
+  pointer-events: none;
+
+  /* animation */
+  opacity: 0;
+  transition:
+    transform 300ms ease,
+    opacity 300ms ease;
+  will-change: transform, opacity;
+}
+
+.alert-toast--right {
+  right: 14px;
+  transform: translateX(calc(100% + 24px));
+}
+
+.alert-toast--left {
+  left: 14px;
+  transform: translateX(calc(-100% - 24px));
+}
+
+.alert-toast.is-visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.alert-toast__inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 14px 18px;
+  border-radius: 14px;
+
+  background: rgba(255, 193, 7, 0.16);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+
+  color: #5c4a00;
+
+  font-size: 15px;
+  font-weight: 500;
+
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+
+  max-width: min(560px, calc(100vw - 28px));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
