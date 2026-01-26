@@ -212,18 +212,17 @@ export default function TopRopesPage() {
       .trim()
       .slice(0, 120);
 
+    // ✅ keep linesUsed in sync so QuickQuote / estimates reflect the change
     const nextEntries = patchEntry(editingId, {
       name,
       partySize: partySizeNum,
+      linesUsed: partySizeNum,
       phone,
       notes,
     });
 
     setLocalEntries(nextEntries);
-
-    // ✅ GREEN save
     showToast("Saved ✅", "success");
-
     closeEdit();
   }
 
