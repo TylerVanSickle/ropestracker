@@ -35,18 +35,14 @@ import {
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
 
-// add this
 import { sendSms } from "@/app/lib/smsClient";
 import { buildNotifyMessage } from "@/app/lib/ropesMessage";
 
-// FIXED import (absolute path)
 import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
 import CourseClosedBanner from "./components/ropes/CourseClosedBanner";
 
-// NEW: alerts engine
 import { computeAlerts } from "@/app/lib/alerts";
 
-// ✅ NEW: CSS-based alert toast (tinted)
 import AlertToast from "@/app/components/ropes/AlertToast";
 
 function isPinValid(input, pin) {
@@ -62,60 +58,18 @@ export default function Home() {
 
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
 
-  // ✅ Bottom Toast (subtle "Added", etc.)
-  const [toast, setToast] = useState("");
-  const [toastVisible, setToastVisible] = useState(false); // controls mount
-  const [toastPhase, setToastPhase] = useState("out"); // "in" | "out"
+  // ✅ Unified right-side toast
+  const [toastKey, setToastKey] = useState("");
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastTone, setToastTone] = useState("info"); // "success" | "warning" | "info"
 
-  const toastOutTimerRef = useRef(null);
-  const toastHideTimerRef = useRef(null);
-
-  // Must be >= your longest transition duration
-  const TOAST_ANIM_MS = 280;
-
-  function showToast(msg, holdMs = 1500) {
-    const text = String(msg || "").trim();
-    if (!text) return;
-
-    // clear any existing timers
-    if (toastOutTimerRef.current) clearTimeout(toastOutTimerRef.current);
-    if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
-
-    // IMPORTANT: mount it in the OUT position first (so enter animation works)
-    setToast(text);
-    setToastPhase("out");
-    setToastVisible(true);
-
-    // next frames -> slide IN (ensures browser sees the "out" state first)
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setToastPhase("in");
-      });
-    });
-
-    // after hold -> slide OUT
-    toastOutTimerRef.current = setTimeout(() => {
-      setToastPhase("out");
-    }, holdMs);
-
-    // after animation -> unmount
-    toastHideTimerRef.current = setTimeout(() => {
-      setToastVisible(false);
-      setToast("");
-    }, holdMs + TOAST_ANIM_MS);
+  function fireToast(message, tone = "info") {
+    const msg = String(message || "").trim();
+    if (!msg) return;
+    setToastMsg(msg);
+    setToastTone(tone);
+    setToastKey(`${Date.now()}:${Math.random().toString(16).slice(2)}`);
   }
-
-  // cleanup on unmount (prevents stray timers in dev)
-  useEffect(() => {
-    return () => {
-      if (toastOutTimerRef.current) clearTimeout(toastOutTimerRef.current);
-      if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
-    };
-  }, []);
-
-  // ✅ Overdue alert toast state (CSS-based)
-  const [alertToastKey, setAlertToastKey] = useState("");
-  const [alertToastMsg, setAlertToastMsg] = useState("");
 
   // PIN gate
   const [authed, setAuthed] = useState(() => {
@@ -137,7 +91,6 @@ export default function Home() {
   const [quoteSizeInput, setQuoteSizeInput] = useState("1");
   const [editingId, setEditingId] = useState(null);
 
-  // optional but helpful: track which entry is currently being notified
   const [notifyBusyId, setNotifyBusyId] = useState(null);
 
   const refreshFromStorage = () => {
@@ -158,7 +111,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Backup: when you come back to this tab, refresh immediately
   useEffect(() => {
     const onFocus = () => refreshFromStorage();
     window.addEventListener("focus", onFocus);
@@ -166,16 +118,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // tick only (NO auto-mutating entries)
   useEffect(() => {
     const t = setInterval(() => {
       setNow(new Date());
     }, 1000);
-
     return () => clearInterval(t);
   }, []);
 
-  // persist on actual edits only (buttons, modals, etc)
   useEffect(() => {
     saveEntries(entries);
   }, [entries]);
@@ -215,7 +164,6 @@ export default function Home() {
     [entries],
   );
 
-  // SINGLE SOURCE OF TRUTH: partySize == sling lines in use
   const occupiedLines = useMemo(() => {
     return active.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
@@ -230,7 +178,6 @@ export default function Home() {
     ? Math.max(1, Number(nextWaiting.partySize || 1))
     : null;
 
-  // IMPORTANT: flowPaused blocks starts
   const nextCanStartNow = nextWaiting
     ? availableLines >= nextNeeds && !Boolean(settings.flowPaused)
     : false;
@@ -294,8 +241,8 @@ export default function Home() {
     now,
   ]);
 
-  // ✅ Overdue alert loop (uses CSS AlertToast now)
-  const overdueShownRef = useRef({}); // { [entryId]: lastShownMs }
+  // ✅ Overdue loop → warning toast
+  const overdueShownRef = useRef({});
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -307,31 +254,24 @@ export default function Home() {
       const nowMs = Date.now();
       const lastShown = overdueShownRef.current[id] ?? 0;
 
-      // Throttle: show same group's overdue banner max once per 3 minutes
       if (nowMs - lastShown < 3 * 60 * 1000) return;
 
       overdueShownRef.current[id] = nowMs;
-
-      // ✅ trigger CSS toast animation
-      setAlertToastMsg(firstOverdue.message);
-      setAlertToastKey(`${id}:${nowMs}`);
+      fireToast(firstOverdue.message, "warning");
     }, 20000);
 
     return () => clearInterval(t);
   }, [entries]);
 
-  // UPDATED: Twilio notify (graceful when SMS isn't connected)
   async function notifyGuest(entry) {
     if (!entry) return;
-
-    // Prevent double taps
     if (notifyBusyId === entry.id) return;
 
-    // Cooldown (2 minutes)
     const COOLDOWN_MS = 2 * 60 * 1000;
     const last = entry.lastNotifiedAt
       ? new Date(entry.lastNotifiedAt).getTime()
       : 0;
+
     if (last && Date.now() - last < COOLDOWN_MS) {
       const minsLeft = Math.ceil((COOLDOWN_MS - (Date.now() - last)) / 60000);
       alert(`Already notified recently. Try again in ~${minsLeft} min.`);
@@ -344,12 +284,8 @@ export default function Home() {
       ? estStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
       : "soon";
 
-    const msg = buildNotifyMessage({
-      entry,
-      estStartText: startText,
-    });
+    const msg = buildNotifyMessage({ entry, estStartText: startText });
 
-    // If they don't have a phone, keep old behavior: copy message
     if (!entry.phone) {
       const ok = await copyToClipboard(msg);
       alert(ok ? "Message copied to clipboard." : "Could not copy message.");
@@ -358,23 +294,21 @@ export default function Home() {
 
     try {
       setNotifyBusyId(entry.id);
-
-      // send via Twilio API route
       await sendSms({ to: entry.phone, message: msg });
 
-      // update local entry so you can see "notified" state later (no DB needed)
       setEntries((prev) =>
-        prev.map((e) => {
-          if (e.id !== entry.id) return e;
-          return {
-            ...e,
-            lastNotifiedAt: new Date().toISOString(),
-            notifiedCount: (e.notifiedCount || 0) + 1,
-          };
-        }),
+        prev.map((e) =>
+          e.id !== entry.id
+            ? e
+            : {
+                ...e,
+                lastNotifiedAt: new Date().toISOString(),
+                notifiedCount: (e.notifiedCount || 0) + 1,
+              },
+        ),
       );
 
-      alert("Text sent");
+      fireToast("Text sent ✅", "success");
     } catch (e) {
       const err = String(e?.message || "");
 
@@ -383,7 +317,7 @@ export default function Home() {
         err.includes("30034") ||
         err.includes("3003")
       ) {
-        alert("SMS is currently unavailable (pending carrier approval).");
+        fireToast("SMS unavailable (pending carrier approval)", "warning");
         return;
       }
 
@@ -394,7 +328,7 @@ export default function Home() {
         return;
       }
 
-      alert("Failed to send text.");
+      fireToast("Failed to send text", "warning");
     } finally {
       setNotifyBusyId(null);
     }
@@ -432,7 +366,7 @@ export default function Home() {
 
     setNewGuest({ name: "", phone: "", partySize: 1, notes: "" });
 
-    showToast("Guest added", 1500);
+    fireToast("Guest added ✅", "success");
   }
 
   function startGroup(id) {
@@ -471,7 +405,6 @@ export default function Home() {
       );
 
       const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
-
       const linesNeeded = Math.max(1, Number(front.partySize || 1));
 
       if (linesNeeded > settings.totalLines) {
@@ -574,7 +507,9 @@ export default function Home() {
       pushUndoSnapshot(prev);
       return prev.map((e) => (e.id === coerced.id ? coerced : e));
     });
+
     setEditingId(null);
+    fireToast("Saved ✅", "success");
   }
 
   function doArchiveToday() {
@@ -653,27 +588,6 @@ export default function Home() {
     );
   }
 
-  // ✅ bottom toast style only (no right-variant anymore)
-  const toastStyle = {
-    position: "fixed",
-    bottom: 20,
-    left: "50%",
-    transform:
-      toastPhase === "in"
-        ? "translateX(-50%) translateY(0)"
-        : "translateX(-50%) translateY(28px)",
-    opacity: toastPhase === "in" ? 1 : 0,
-    transition: "transform 280ms ease, opacity 280ms ease",
-    background: "rgba(0,0,0,0.85)",
-    color: "#fff",
-    padding: "8px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-    zIndex: 9999,
-    pointerEvents: "none",
-    willChange: "transform, opacity",
-  };
-
   return (
     <main className="container">
       <Topbar
@@ -748,16 +662,14 @@ export default function Home() {
         />
       ) : null}
 
-      {/* ✅ Overdue warning toast (tinted via globals.css) */}
+      {/* ✅ One toast system (right side), tone-based */}
       <AlertToast
-        toastKey={alertToastKey}
-        message={alertToastMsg}
-        durationMs={2600}
+        toastKey={toastKey}
+        message={toastMsg}
+        durationMs={2200}
         side="right"
+        tone={toastTone}
       />
-
-      {/* ✅ Bottom toast (guest added) */}
-      {toastVisible && toast ? <div style={toastStyle}>{toast}</div> : null}
     </main>
   );
 }

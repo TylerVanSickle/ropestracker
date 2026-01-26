@@ -7,6 +7,7 @@ export default function AlertToast({
   message,
   durationMs = 1200,
   side = "right", // "right" | "left"
+  tone = "info", // "success" | "warning" | "info"
 }) {
   const [visible, setVisible] = useState(false);
   const hideTimer = useRef(null);
@@ -18,7 +19,7 @@ export default function AlertToast({
     if (hideTimer.current) clearTimeout(hideTimer.current);
     if (showTimer.current) clearTimeout(showTimer.current);
 
-    // async state changes (lint-safe)
+    // mount -> visible
     showTimer.current = setTimeout(() => setVisible(true), 0);
     hideTimer.current = setTimeout(() => setVisible(false), durationMs);
 
@@ -30,10 +31,14 @@ export default function AlertToast({
 
   if (!message) return null;
 
+  const safeTone =
+    tone === "success" || tone === "warning" || tone === "info" ? tone : "info";
+
   const classes = [
     "alert-toast",
     side === "left" ? "alert-toast--left" : "alert-toast--right",
     visible ? "is-visible" : "",
+    `alert-toast--${safeTone}`, // ✅ key line
   ].join(" ");
 
   return (
