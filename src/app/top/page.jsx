@@ -1,135 +1,36 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 import {
   loadEntries,
   loadSettings,
   subscribeToRopesStorage,
-  normalizeEntries,
   patchEntry,
   extendEntryByMinutes,
   markEntryDone,
-  formatTime,
   archiveFlaggedEntry,
   mergeEntries,
 } from "@/app/lib/ropesStore";
 
-import { COURSE_TAGS, COURSE_TAG_LABELS } from "../lib/ropesTags";
-import { ensureQueueOrder } from "@/app/lib/ropesUtils";
+import { COURSE_TAG_LABELS } from "../lib/ropesTags";
 
 import ArchiveModal from "@/app/components/ropes/ArchiveModal";
 import ConfirmModal from "@/app/components/ropes/ConfirmModal";
-import FlowControlButton from "../components/ropes/FlowControlButton";
 
-function minutesLeft(endTimeISO) {
-  if (!endTimeISO) return null;
-  const t = new Date(endTimeISO);
-  const endMs = t.getTime();
-  if (!Number.isFinite(endMs)) return null;
+import TopHeader from "./components/TopHeader";
+import ComingUpSection from "./components/ComingUpSection";
+import OnCourseSection from "./components/OnCourseSection";
+import WaitlistSection from "./components/WaitlistSection";
+import OperatorNotesSection from "./components/OperatorNotesSection";
+import EditGroupModal from "./components/EditGroupModal";
 
-  const diffMs = endMs - Date.now();
-
-  // ✅ For positive time remaining, ceil (e.g. 0.2 min => 1 min left)
-  if (diffMs >= 0) return Math.ceil(diffMs / 60000);
-
-  // ✅ For overdue, become negative immediately (e.g. -10s => -1 min overdue)
-  return -Math.ceil(Math.abs(diffMs) / 60000);
-}
-
-function isoPlusMinutes(mins) {
-  const m = Math.max(1, Number(mins || 0));
-  return new Date(Date.now() + m * 60 * 1000).toISOString();
-}
-
-function getAvailableTags(up, allTags) {
-  const used = new Set((up || []).map((x) => x.assignedTag).filter(Boolean));
-  return (allTags || []).filter((t) => !used.has(t));
-}
-
-function getDerived(entriesRaw, settings) {
-  const { entries } = normalizeEntries(entriesRaw);
-  const list = ensureQueueOrder(entries);
-
-  const waiting = [];
-  const up = [];
-
-  for (const e of list) {
-    const s = String(e.status || "").toUpperCase();
-    if (s === "WAITING") waiting.push(e);
-    else if (s === "UP") up.push(e);
-  }
-
-  waiting.sort((a, b) => {
-    const ao = typeof a.queueOrder === "number" ? a.queueOrder : 0;
-    const bo = typeof b.queueOrder === "number" ? b.queueOrder : 0;
-    return ao - bo;
-  });
-
-  const totalLines = Math.max(0, Number(settings?.totalLines ?? 0));
-  const now = Date.now();
-
-  let used = 0;
-  for (const e of up) {
-    const needs = Math.max(1, Number(e.partySize || 1));
-    const end = e.endTime ? new Date(e.endTime).getTime() : NaN;
-
-    if (Number.isFinite(end) && end > now) used += needs;
-    if (!Number.isFinite(end)) used += needs;
-  }
-
-  const availableLines = Math.max(0, totalLines - used);
-
-  const sentUp = up
-    .filter((e) => String(e.coursePhase || "").toUpperCase() === "SENT")
-    .sort((a, b) => {
-      const ao = new Date(
-        a.sentUpAt || a.startedAt || a.createdAt || 0,
-      ).getTime();
-      const bo = new Date(
-        b.sentUpAt || b.startedAt || b.createdAt || 0,
-      ).getTime();
-      return ao - bo;
-    });
-
-  const onCourse = up
-    .filter((e) => String(e.coursePhase || "").toUpperCase() !== "SENT")
-    .sort((a, b) => {
-      const ao = new Date(
-        a.startTime || a.startedAt || a.createdAt || 0,
-      ).getTime();
-      const bo = new Date(
-        b.startTime || b.startedAt || b.createdAt || 0,
-      ).getTime();
-      return ao - bo;
-    });
-
-  return { waiting, up, sentUp, onCourse, availableLines, totalLines };
-}
-
-function getTagMetaByLabel(label) {
-  const s = String(label || "");
-  return COURSE_TAGS.find((t) => t.label === s) || null;
-}
-
-function entryTintStyle(entry) {
-  const meta = getTagMetaByLabel(entry?.assignedTag);
-  if (!meta?.color) return null;
-
-  // If your app uses a different dark-mode flag, swap this check.
-  const isDark =
-    typeof document !== "undefined" &&
-    document.documentElement?.getAttribute("data-theme") === "dark";
-
-  const bgAlpha = isDark ? 0.14 : 0.08;
-  const borderAlpha = isDark ? 0.65 : 0.55;
-
-  return {
-    background: `rgba(${meta.color}, ${bgAlpha})`,
-    borderLeft: `6px solid rgba(${meta.color}, ${borderAlpha})`,
-  };
-}
+import {
+  entryTintStyle,
+  getAvailableTags,
+  getDerived,
+  isoPlusMinutes,
+} from "./lib/topRopesHelpers";
 
 export default function TopRopesPage() {
   const [settings, setSettings] = useState(() => loadSettings());
@@ -159,18 +60,16 @@ export default function TopRopesPage() {
   const [finishEntry, setFinishEntry] = useState(null);
 
   useEffect(() => {
-    const unsub = subscribeToRopesStorage(() => {
+    const refresh = () => {
       setSettings(loadSettings());
       setEntries(loadEntries());
-    });
-    return () => unsub?.();
-  }, []);
+    };
 
-  useEffect(() => {
-    const refresh = () => setSettings(loadSettings());
+    // initial sync (optional but nice)
+    refresh();
+
     const unsub = subscribeToRopesStorage(refresh);
 
-    // backup: when tab refocuses, refresh
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
 
@@ -401,574 +300,60 @@ export default function TopRopesPage() {
 
   return (
     <main className="page" style={{ padding: "14px 14px 28px" }}>
-      {/* Header */}
-      <div className="topbar">
-        {/* ROW 1: Title + helper text (full width) */}
-        <div>
-          <h1 style={{ margin: 0 }}>Top Ropes</h1>
-          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            Operators: tag → Start Course • Desk: Send Up reserves lines
-          </div>
-        </div>
-
-        {/* ROW 2: Buttons (left) + Status cards (right) */}
-        <div className="topbarRow2">
-          {/* LEFT: Buttons */}
-          <div className="row topbarLinks">
-            <Link className="button" href="/">
-              Bottom
-            </Link>
-
-            <Link className="button" href="/client" target="_blank">
-              Client Display
-            </Link>
-
-            <Link className="button" href="/archive" target="_blank">
-              Archive
-            </Link>
-
-            <Link className="button" href="/settings" target="_blank">
-              Settings
-            </Link>
-
-            <FlowControlButton className="button" />
-          </div>
-
-          {/* RIGHT: Status cards */}
-          <div
-            className="card topbarStatus"
-            style={{
-              padding: 12,
-              display: "grid",
-              gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-              gap: 10,
-            }}
-          >
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Status
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {closed ? "CLOSED" : "OPEN"}
-              </div>
-            </div>
-
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Lines
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {availableLines} / {totalLines} free
-              </div>
-            </div>
-
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Coming Up
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{sentCount}</div>
-            </div>
-
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                On Course
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{courseCount}</div>
-            </div>
-
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Waiting
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {waitingCount}
-              </div>
-            </div>
-
-            <div className="item" style={{ padding: 10 }}>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Course Timer
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {Number(settings?.topDurationMin ?? 35)} min
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CLOSED warning */}
-        {closed ? (
-          <div
-            className="card"
-            style={{
-              marginTop: 12,
-              border: "2px solid var(--danger, #ff4d4d)",
-            }}
-          >
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <strong>Closed</strong>
-              <span className="muted">
-                Start Course is disabled while Closed is on.
-              </span>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <TopHeader
+        closed={closed}
+        availableLines={availableLines}
+        totalLines={totalLines}
+        sentCount={sentCount}
+        courseCount={courseCount}
+        waitingCount={waitingCount}
+        settings={settings}
+      />
 
       {/* Body */}
       <div className="topBody">
         {/* LEFT column */}
         <div style={{ display: "grid", gap: 14 }}>
-          <section className="card">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Coming Up Now ({sentUp.length})
-              </h2>
+          <ComingUpSection
+            sentUp={sentUp}
+            sentPreview={sentPreview}
+            settings={settings}
+            closed={closed}
+            mergeIds={mergeIds}
+            showAllSent={showAllSent}
+            setShowAllSent={setShowAllSent}
+            toggleMergeSelect={toggleMergeSelect}
+            doMergeSelected={doMergeSelected}
+            clearMerge={clearMerge}
+            tagOptionsForEntry={tagOptionsForEntry}
+            handleAssignTag={handleAssignTag}
+            openEdit={openEdit}
+            handleStartCourse={handleStartCourse}
+            handleFinish={handleFinish}
+            openArchive={openArchive}
+            entryTintStyle={entryTintStyle}
+          />
 
-              <div
-                className="row"
-                style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}
-              >
-                {mergeIds.length ? (
-                  <span className="pill">Selected: {mergeIds.length}/2</span>
-                ) : null}
-
-                {mergeIds.length === 2 ? (
-                  <>
-                    <button
-                      className="button button-primary"
-                      type="button"
-                      onClick={doMergeSelected}
-                    >
-                      Merge Selected
-                    </button>
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={clearMerge}
-                    >
-                      Clear
-                    </button>
-                  </>
-                ) : mergeIds.length === 1 ? (
-                  <button className="button" type="button" onClick={clearMerge}>
-                    Clear
-                  </button>
-                ) : null}
-
-                {sentUp.length > 5 ? (
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => setShowAllSent((v) => !v)}
-                  >
-                    {showAllSent ? "View Less" : "View More"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              Tip: Select 2 groups to merge if desk sent them up together.
-            </div>
-
-            {sentUp.length === 0 ? (
-              <div className="item" style={{ padding: 14, marginTop: 12 }}>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>
-                  No groups coming up
-                </div>
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Desk hasn’t sent anyone up yet. When they hit{" "}
-                  <strong>Send Up</strong>, groups will appear here.
-                </div>
-              </div>
-            ) : (
-              <div className="list spacer-sm" style={{ marginTop: 12 }}>
-                {sentPreview.map((e) => {
-                  const needs = Math.max(1, Number(e.partySize || 1));
-                  const tagOptions = tagOptionsForEntry(e);
-                  const selected = mergeIds.includes(e.id);
-
-                  return (
-                    <div
-                      key={e.id}
-                      className="item item-next"
-                      style={{
-                        padding: 14,
-                        ...(entryTintStyle(e) || {}),
-                        outline: selected
-                          ? "2px solid var(--accent, #6aa9ff)"
-                          : "none",
-                      }}
-                    >
-                      <div className="item-main">
-                        <div className="item-title" style={{ fontSize: 18 }}>
-                          {e.name} <span className="pill">{needs} lines</span>{" "}
-                          <span className="pill">COMING UP</span>
-                          {e.assignedTag ? (
-                            <span className="pill">{e.assignedTag}</span>
-                          ) : null}
-                          {selected ? (
-                            <span className="pill">SELECTED</span>
-                          ) : null}
-                        </div>
-
-                        {e.notes ? (
-                          <div className="item-notes">📝 {e.notes}</div>
-                        ) : null}
-
-                        <div className="muted item-sub">
-                          Sent up: {e.sentUpAt ? formatTime(e.sentUpAt) : "—"}
-                        </div>
-
-                        <div
-                          className="row"
-                          style={{
-                            gap: 10,
-                            marginTop: 10,
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <button
-                            className="button"
-                            type="button"
-                            onClick={() => toggleMergeSelect(e.id)}
-                          >
-                            {selected ? "Unselect" : "Select"}
-                          </button>
-
-                          <label className="muted" style={{ fontSize: 13 }}>
-                            Group Tag (required):
-                          </label>
-
-                          <select
-                            className="input"
-                            style={{ minWidth: 240, padding: 10 }}
-                            value={e.assignedTag ?? ""}
-                            onChange={(ev) =>
-                              handleAssignTag(e.id, ev.target.value)
-                            }
-                          >
-                            <option value="">Select a tag…</option>
-                            {tagOptions.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-
-                          <button
-                            className="button"
-                            type="button"
-                            onClick={() => openEdit(e)}
-                          >
-                            Edit
-                          </button>
-                        </div>
-
-                        {!e.assignedTag ? (
-                          <div className="muted" style={{ marginTop: 10 }}>
-                            Choose a tag to enable <strong>Start Course</strong>
-                            .
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div
-                        className="item-actions"
-                        style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
-                      >
-                        <button
-                          className="button button-primary"
-                          onClick={() => handleStartCourse(e)}
-                          disabled={closed || !e.assignedTag}
-                          type="button"
-                          style={{ padding: "10px 14px" }}
-                        >
-                          Start Course ({Number(settings?.topDurationMin ?? 35)}
-                          )
-                        </button>
-
-                        <button
-                          className="button"
-                          onClick={() => handleFinish(e)}
-                          type="button"
-                        >
-                          Finish
-                        </button>
-
-                        <button
-                          className="button"
-                          onClick={() => openArchive(e)}
-                          type="button"
-                        >
-                          Flag & Archive
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* On Course */}
-          <section className="card">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <h2 className="section-title" style={{ margin: 0 }}>
-                On Course ({onCourse.length})
-              </h2>
-              <span className="muted" style={{ fontSize: 13 }}>
-                +5 / End Early / Done / Edit / Archive
-              </span>
-            </div>
-
-            {onCourse.length === 0 ? (
-              <div className="item" style={{ padding: 14, marginTop: 12 }}>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>
-                  No one is on course
-                </div>
-                <div className="muted" style={{ marginTop: 6 }}>
-                  When you press <strong>Start Course</strong> for a Coming Up
-                  group, they’ll appear here with a timer.
-                </div>
-              </div>
-            ) : (
-              <div className="list spacer-sm" style={{ marginTop: 12 }}>
-                {onCourse.map((e) => {
-                  const needs = Math.max(1, Number(e.partySize || 1));
-                  const left = minutesLeft(e.endTime);
-                  const leftText =
-                    left == null
-                      ? "—"
-                      : left >= 0
-                        ? `${left} min left`
-                        : `${Math.abs(left)} min overdue`;
-
-                  return (
-                    <div
-                      key={e.id}
-                      className="item"
-                      style={{
-                        padding: 14,
-                        ...(entryTintStyle(e) || {}),
-                      }}
-                    >
-                      <div className="item-main">
-                        <div className="item-title" style={{ fontSize: 18 }}>
-                          {e.name} <span className="pill">{needs} lines</span>{" "}
-                          <span className="pill">ON COURSE</span>
-                          {e.assignedTag ? (
-                            <span className="pill">{e.assignedTag}</span>
-                          ) : null}
-                        </div>
-
-                        <div className="muted item-sub">
-                          Ends: {e.endTime ? formatTime(e.endTime) : "—"} •{" "}
-                          <strong>{leftText}</strong>
-                          {Number(e.timeAdjustMin || 0) ? (
-                            <> • Adjusted: +{Number(e.timeAdjustMin || 0)}m</>
-                          ) : null}
-                        </div>
-
-                        {e.notes ? (
-                          <div className="item-notes" style={{ marginTop: 8 }}>
-                            📝 {e.notes}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div
-                        className="item-actions"
-                        style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
-                      >
-                        <button
-                          className="button"
-                          onClick={() => handleExtend(e.id)}
-                          type="button"
-                        >
-                          +5 min
-                        </button>
-
-                        <button
-                          className="button button-primary"
-                          onClick={() => handleFinish(e)}
-                          type="button"
-                          title="Marks group done and frees up lines"
-                        >
-                          Finish
-                        </button>
-
-                        <button
-                          className="button"
-                          onClick={() => openEdit(e)}
-                          type="button"
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          className="button"
-                          onClick={() => openArchive(e)}
-                          type="button"
-                        >
-                          Flag & Archive
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+          <OnCourseSection
+            onCourse={onCourse}
+            handleExtend={handleExtend}
+            handleFinish={handleFinish}
+            openEdit={openEdit}
+            openArchive={openArchive}
+            entryTintStyle={entryTintStyle}
+          />
         </div>
 
         {/* RIGHT column */}
         <div style={{ display: "grid", marginTop: 14, gap: 14 }}>
-          {/* Waitlist */}
-          <section className="card">
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Waitlist ({waiting.length})
-              </h2>
+          <WaitlistSection
+            waiting={waiting}
+            waitingPreview={waitingPreview}
+            showAllWaiting={showAllWaiting}
+            setShowAllWaiting={setShowAllWaiting}
+          />
 
-              {waiting.length > 8 ? (
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => setShowAllWaiting((v) => !v)}
-                >
-                  {showAllWaiting ? "View Less" : "View More"}
-                </button>
-              ) : (
-                <span className="muted" style={{ fontSize: 13 }}>
-                  Shows all
-                </span>
-              )}
-            </div>
-
-            {waiting.length === 0 ? (
-              <div className="item" style={{ padding: 14, marginTop: 12 }}>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>
-                  Waitlist is empty
-                </div>
-                <div className="muted" style={{ marginTop: 6 }}>
-                  New groups will appear here after desk check-in.
-                </div>
-              </div>
-            ) : (
-              <div className="list spacer-sm" style={{ marginTop: 12 }}>
-                {waitingPreview.map((e, idx) => (
-                  <div key={e.id} className="item" style={{ padding: 12 }}>
-                    <div className="item-title">
-                      #{idx + 1} {e.name}{" "}
-                      <span className="pill">
-                        {Math.max(1, Number(e.partySize || 1))} lines
-                      </span>
-                    </div>
-                    <div className="muted item-sub">
-                      Added: {formatTime(e.createdAt)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Operator Notes */}
-          <section className="card">
-            <details>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  listStyle: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  userSelect: "none",
-                }}
-              >
-                <div>
-                  <h2 className="section-title" style={{ margin: 0 }}>
-                    Operator Notes
-                  </h2>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                    Tap to expand (workflow + tools)
-                  </div>
-                </div>
-
-                <span className="pill">Help</span>
-              </summary>
-
-              <div style={{ marginTop: 12 }}>
-                <div className="item" style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 700 }}>Workflow</div>
-                  <div
-                    className="muted"
-                    style={{ marginTop: 6, lineHeight: 1.5 }}
-                  >
-                    1) Desk hits <strong>Send Up</strong> → group appears in{" "}
-                    <strong>Coming Up Now</strong>.
-                    <br />
-                    2) Choose <strong>Group Tag</strong> (required).
-                    <br />
-                    3) Press <strong>Start Course</strong> → timer starts and
-                    moves to <strong>On Course</strong>.
-                  </div>
-                </div>
-
-                <div className="item" style={{ padding: 12, marginTop: 10 }}>
-                  <div style={{ fontWeight: 700 }}>Merge</div>
-                  <div
-                    className="muted"
-                    style={{ marginTop: 6, lineHeight: 1.5 }}
-                  >
-                    If desk sent two groups up together (ex: 3 + 2), select both
-                    in <strong>Coming Up Now</strong> and tap{" "}
-                    <strong>Merge Selected</strong>.
-                  </div>
-                </div>
-
-                <div className="item" style={{ padding: 12, marginTop: 10 }}>
-                  <div style={{ fontWeight: 700 }}>Flag & Archive</div>
-                  <div
-                    className="muted"
-                    style={{ marginTop: 6, lineHeight: 1.5 }}
-                  >
-                    Use <strong>Flag & Archive</strong> if a group is
-                    disrespectful. It saves a record in{" "}
-                    <strong>/archive</strong>. You can choose whether to remove
-                    them from the active lists.
-                  </div>
-                </div>
-
-                <div className="item" style={{ padding: 12, marginTop: 10 }}>
-                  <div style={{ fontWeight: 700 }}>Closed</div>
-                  <div
-                    className="muted"
-                    style={{ marginTop: 6, lineHeight: 1.5 }}
-                  >
-                    When Closed is on, <strong>Start Course</strong> is
-                    disabled.
-                  </div>
-                </div>
-              </div>
-            </details>
-          </section>
+          <OperatorNotesSection />
         </div>
       </div>
 
@@ -997,147 +382,13 @@ export default function TopRopesPage() {
       />
 
       {/* Edit Modal */}
-      {editingId ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 14,
-            zIndex: 9999,
-          }}
-          onClick={closeEdit}
-        >
-          <div
-            className="card"
-            style={{ width: "min(720px, 100%)", padding: 16 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", alignItems: "center" }}
-            >
-              <h2 className="section-title" style={{ margin: 0 }}>
-                Edit Group
-              </h2>
-              <button className="button" onClick={closeEdit} type="button">
-                Close
-              </button>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                <div style={{ flex: "1 1 260px" }}>
-                  <div
-                    className="muted"
-                    style={{ fontSize: 13, marginBottom: 6 }}
-                  >
-                    Name
-                  </div>
-                  <input
-                    className="input"
-                    style={{ width: "100%", padding: 10 }}
-                    value={editDraft.name}
-                    onChange={(e) =>
-                      setEditDraft((d) => ({ ...d, name: e.target.value }))
-                    }
-                  />
-                </div>
-
-                <div style={{ width: 180 }}>
-                  <div
-                    className="muted"
-                    style={{ fontSize: 13, marginBottom: 6 }}
-                  >
-                    Lines (party size)
-                  </div>
-                  <input
-                    className="input"
-                    style={{ width: "100%", padding: 10 }}
-                    value={editDraft.partySize}
-                    onChange={(e) =>
-                      setEditDraft((d) => ({
-                        ...d,
-                        partySize: e.target.value,
-                      }))
-                    }
-                    inputMode="numeric"
-                  />
-                </div>
-              </div>
-
-              <div
-                className="row"
-                style={{ gap: 12, marginTop: 12, flexWrap: "wrap" }}
-              >
-                <div style={{ flex: "1 1 260px" }}>
-                  <div
-                    className="muted"
-                    style={{ fontSize: 13, marginBottom: 6 }}
-                  >
-                    Phone
-                  </div>
-                  <input
-                    className="input"
-                    style={{ width: "100%", padding: 10 }}
-                    value={editDraft.phone}
-                    onChange={(e) =>
-                      setEditDraft((d) => ({ ...d, phone: e.target.value }))
-                    }
-                  />
-                </div>
-
-                <div style={{ flex: "2 1 340px" }}>
-                  <div
-                    className="muted"
-                    style={{ fontSize: 13, marginBottom: 6 }}
-                  >
-                    Notes
-                  </div>
-                  <input
-                    className="input"
-                    style={{ width: "100%", padding: 10 }}
-                    value={editDraft.notes}
-                    onChange={(e) =>
-                      setEditDraft((d) => ({ ...d, notes: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <div
-                className="row"
-                style={{
-                  gap: 10,
-                  marginTop: 14,
-                  justifyContent: "flex-end",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button className="button" onClick={closeEdit} type="button">
-                  Cancel
-                </button>
-                <button
-                  className="button button-primary"
-                  onClick={saveEdit}
-                  type="button"
-                >
-                  Save Changes
-                </button>
-              </div>
-
-              <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                Updates reflect on other screens on the same device/tabs.
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <EditGroupModal
+        open={Boolean(editingId)}
+        editDraft={editDraft}
+        setEditDraft={setEditDraft}
+        closeEdit={closeEdit}
+        saveEdit={saveEdit}
+      />
     </main>
   );
 }
