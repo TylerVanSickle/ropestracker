@@ -9,9 +9,52 @@ import {
   clearStaffAuth,
 } from "@/app/lib/ropesStore";
 
+const SESSION_KEY = "settings_authed_v1";
+
 export default function SettingsPage() {
+  // 🔒 SETTINGS PASSWORD (client-readable)
+  const REQUIRED_PASS = process.env.NEXT_PUBLIC_SETTINGS_PASS;
+
+  // ✅ Derive initial auth without an effect (fixes ESLint set-state-in-effect)
+  const [authed, setAuthed] = useState(() => {
+    // If no password configured, treat as unlocked
+    if (!REQUIRED_PASS) return true;
+
+    try {
+      return sessionStorage.getItem(SESSION_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const [passInput, setPassInput] = useState("");
+  const [passError, setPassError] = useState("");
+
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
+
+  function submitPassword(e) {
+    e.preventDefault();
+
+    if (!REQUIRED_PASS) {
+      alert(
+        "Settings password is not configured. Add NEXT_PUBLIC_SETTINGS_PASS in .env.local",
+      );
+      return;
+    }
+
+    if (passInput === REQUIRED_PASS) {
+      try {
+        sessionStorage.setItem(SESSION_KEY, "true");
+      } catch {}
+      setAuthed(true);
+      setPassError("");
+      setPassInput("");
+    } else {
+      setPassError("Incorrect password");
+      setPassInput("");
+    }
+  }
 
   const clamped = useMemo(() => {
     const totalLines = Math.min(
@@ -63,6 +106,55 @@ export default function SettingsPage() {
     settings.clientTheme,
     settings.staffPin,
   ]);
+
+  // 🔒 Gate UI (after hooks)
+  if (!authed) {
+    return (
+      <main className="container" style={{ maxWidth: 520 }}>
+        <div className="card spacer-md" style={{ marginTop: 24 }}>
+          <div className="topbar" style={{ marginBottom: 12 }}>
+            <div>
+              <h1 className="title">Settings</h1>
+              <p className="muted">
+                This page is locked. Enter the staff password to continue.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={submitPassword} className="guest-form spacer-sm">
+            <label className="field">
+              <span className="field-label">Settings password</span>
+              <input
+                className="input"
+                type="password"
+                value={passInput}
+                onChange={(e) => setPassInput(e.target.value)}
+                placeholder="Enter password"
+                autoFocus
+              />
+              {passError ? (
+                <p
+                  className="muted helper"
+                  style={{ color: "var(--danger, #e44)" }}
+                >
+                  {passError}
+                </p>
+              ) : null}
+            </label>
+
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <Link className="button" href="/">
+                Back
+              </Link>
+              <button className="button button-primary" type="submit">
+                Unlock
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
+    );
+  }
 
   function updateTotalLines(value) {
     setSettings((s) => ({
