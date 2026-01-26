@@ -25,15 +25,16 @@ export default function ConfirmDangerModal({
 
   function closeAll() {
     onClose?.();
-    // no local reset here; parent remount (key) handles it
   }
 
   function back() {
-    setStep((s) => Math.max(1, s - 1));
+    // leaving the confirm step resets the typed input
+    setTyped("");
+    setStep(1);
   }
 
   function next() {
-    setStep((s) => Math.min(2, s + 1));
+    setStep(2);
   }
 
   function confirm() {

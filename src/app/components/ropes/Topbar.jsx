@@ -18,6 +18,18 @@ export default function Topbar({
 }) {
   const [clearOpen, setClearOpen] = useState(false);
 
+  // key forces ConfirmDangerModal to remount (resets typed + step)
+  const [clearModalKey, setClearModalKey] = useState(0);
+
+  function openClear() {
+    setClearModalKey((k) => k + 1); // fresh instance every open
+    setClearOpen(true);
+  }
+
+  function closeClear() {
+    setClearOpen(false);
+  }
+
   return (
     <div className="card">
       <div className="topbar">
@@ -59,7 +71,7 @@ export default function Topbar({
           <button
             className="button"
             type="button"
-            onClick={() => setClearOpen(true)}
+            onClick={openClear}
             title="Clear waitlist + active runs"
           >
             Clear list
@@ -75,12 +87,13 @@ export default function Topbar({
       </div>
 
       <ConfirmDangerModal
+        key={clearModalKey}
         open={clearOpen}
         title="Clear everything?"
         dangerVerb="Clear now"
         confirmWord="CLEAR"
         description="This will clear the entire waitlist and any active runs. This is intended for end-of-day resets."
-        onClose={() => setClearOpen(false)}
+        onClose={closeClear}
         onConfirm={() => onClearAll?.()}
       />
     </div>
