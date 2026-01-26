@@ -41,6 +41,7 @@ import { buildNotifyMessage } from "@/app/lib/ropesMessage";
 
 // ✅ FIXED import (absolute path)
 import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
+import CourseClosedBanner from "./components/ropes/CourseClosedBanner";
 
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
@@ -636,6 +637,7 @@ export default function Home() {
 
       {/* ✅ Styled + live banner */}
       <FlowPausedBanner settings={settings} />
+      <CourseClosedBanner settings={settings} />
 
       <QuickQuote
         quoteSizeInput={quoteSizeInput}
