@@ -800,7 +800,7 @@ export function endEntryEarly(entryId) {
 }
 
 export function markEntryDone(entryId) {
-  return patchEntry(entryId, { status: "DONE" });
+  return patchEntry(entryId, { status: "DONE", linesUsed: 0 });
 }
 
 export function sendUpEntry(entryId) {
