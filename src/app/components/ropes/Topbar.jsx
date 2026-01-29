@@ -15,14 +15,16 @@ export default function Topbar({
   onArchiveToday,
   onOpenClient,
   onOpenPrint,
+
+  // ✅ reservations popup
+  onOpenReservations,
+  reservationsCount = 0,
 }) {
   const [clearOpen, setClearOpen] = useState(false);
-
-  // key forces ConfirmDangerModal to remount (resets typed + step)
   const [clearModalKey, setClearModalKey] = useState(0);
 
   function openClear() {
-    setClearModalKey((k) => k + 1); // fresh instance every open
+    setClearModalKey((k) => k + 1);
     setClearOpen(true);
   }
 
@@ -66,6 +68,33 @@ export default function Topbar({
             title={!canUndo ? "Nothing to undo" : "Undo last action"}
           >
             Undo
+          </button>
+
+          {/* ✅ popup button */}
+          <button
+            className="button"
+            type="button"
+            onClick={onOpenReservations}
+            title="View reservations"
+          >
+            Reservations{" "}
+            <span
+              style={{
+                marginLeft: 8,
+                display: "inline-flex",
+                minWidth: 22,
+                height: 18,
+                padding: "0 6px",
+                borderRadius: 999,
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 12,
+                border: "1px solid rgba(255,255,255,0.18)",
+                opacity: 0.9,
+              }}
+            >
+              {reservationsCount}
+            </span>
           </button>
 
           <button
