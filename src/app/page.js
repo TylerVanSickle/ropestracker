@@ -42,8 +42,9 @@ import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
 import CourseClosedBanner from "./components/ropes/CourseClosedBanner";
 
 import { computeAlerts } from "@/app/lib/alerts";
-
 import AlertToast from "@/app/components/ropes/AlertToast";
+
+import ReservationsPopup from "@/app/components/ropes/ReservationsPopup";
 
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
@@ -57,6 +58,9 @@ export default function Home() {
   const [now, setNow] = useState(() => new Date());
 
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
+
+  // ✅ reservations popup
+  const [reservationsOpen, setReservationsOpen] = useState(false);
 
   // ✅ Unified right-side toast
   const [toastKey, setToastKey] = useState("");
@@ -240,6 +244,12 @@ export default function Home() {
     settings.durationMin,
     now,
   ]);
+
+  // ✅ reservations count for badge
+  const reservationsCount = useMemo(
+    () => entries.filter((e) => e.status === "RESERVED").length,
+    [entries],
+  );
 
   // ✅ Overdue loop → warning toast
   const overdueShownRef = useRef({});
@@ -456,7 +466,6 @@ export default function Home() {
   }
 
   function clearAll() {
-    if (!confirm("Clear the entire waitlist + active runs?")) return;
     setEntries((prev) => {
       pushUndoSnapshot(prev);
       return [];
@@ -490,6 +499,40 @@ export default function Home() {
       });
     });
   }
+
+  // THIS IS FOR RESERVED CHECK-INS
+  useEffect(() => {
+    const t = setInterval(() => {
+      const nowMs = Date.now();
+
+      setEntries((prev) => {
+        let changed = false;
+
+        const next = prev.map((e) => {
+          if (e.status !== "RESERVED") return e;
+          const at = e.reserveAtISO ? new Date(e.reserveAtISO).getTime() : 0;
+          if (!at || Number.isNaN(at)) return e;
+          if (at > nowMs) return e;
+
+          changed = true;
+          return {
+            ...e,
+            status: "WAITING",
+            queueOrder: nowMs - 10_000 + Math.random(),
+          };
+        });
+
+        if (!changed) return prev;
+
+        pushUndoSnapshot(prev);
+        return ensureQueueOrder(next);
+      });
+    }, 15000);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // THIS IS FOR RESERVED CHECK-INS ^^^
 
   const editingEntry = useMemo(() => {
     if (!editingId) return null;
@@ -600,6 +643,8 @@ export default function Home() {
         onArchiveToday={doArchiveToday}
         onOpenClient={openClient}
         onOpenPrint={openPrint}
+        onOpenReservations={() => setReservationsOpen(true)}
+        reservationsCount={reservationsCount}
       />
 
       <FlowPausedBanner settings={settings} />
@@ -661,6 +706,15 @@ export default function Home() {
           onComplete={completeGroup}
         />
       ) : null}
+
+      {/* ✅ Reservations popup */}
+      <ReservationsPopup
+        open={reservationsOpen}
+        onClose={() => setReservationsOpen(false)}
+        entries={entries}
+        setEntries={setEntries}
+        nowMs={now.getTime()}
+      />
 
       {/* ✅ One toast system (right side), tone-based */}
       <AlertToast

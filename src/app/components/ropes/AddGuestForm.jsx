@@ -124,13 +124,14 @@ export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
 
         <div className="form-row">
           <label className="field">
-            <span className="field-label">Phone (optional)</span>
+            <span className="field-label">Phone</span>
             <input
               className="input"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               value={newGuest.phone}
+              required
               placeholder="(801) 555-1234"
               onChange={(e) => {
                 const formatted = formatPhoneUS(e.target.value);
