@@ -1,0 +1,111 @@
+/* Reservations page helpers (keeps your existing app styles + just adds layout) */
+
+.reservations-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.reservations-header__left {
+  flex: 1;
+  min-width: 240px;
+}
+
+.reservations-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.6fr 0.9fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .reservations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reservations-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.reservations-mini {
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.reservations-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.reservations-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  opacity: 0.85;
+}
+
+.reservations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reservations-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.reservations-main {
+  flex: 1;
+  min-width: 240px;
+}
+
+.reservations-name {
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.reservations-sub {
+  margin-top: 4px;
+}
+
+.reservations-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.reservations-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.reservations-dt {
+  width: 220px;
+  max-width: 100%;
+}
+
+.reservations-when {
+  opacity: 0.85;
+}
