@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function StaffLoginPage() {
+// Avoid static prerender/export issues for a login page
+export const dynamic = "force-dynamic";
+
+function StaffLoginInner() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
@@ -15,14 +19,17 @@ export default function StaffLoginPage() {
     e.preventDefault();
     setErr("");
     setLoading(true);
+
     try {
       const res = await fetch("/api/staff/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ password }),
       });
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Login failed");
+
       router.replace(next);
       router.refresh();
     } catch (e) {
@@ -52,9 +59,11 @@ export default function StaffLoginPage() {
             border: "1px solid #333",
           }}
         />
+
         {err ? (
           <div style={{ color: "#ff6b6b", marginTop: 10 }}>{err}</div>
         ) : null}
+
         <button
           type="submit"
           disabled={!password || loading}
@@ -70,5 +79,19 @@ export default function StaffLoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function StaffLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ maxWidth: 420, margin: "64px auto", padding: 16 }}>
+          Loading…
+        </div>
+      }
+    >
+      <StaffLoginInner />
+    </Suspense>
   );
 }
