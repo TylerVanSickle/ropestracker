@@ -38,7 +38,7 @@ export default function AlertToast({
     "alert-toast",
     side === "left" ? "alert-toast--left" : "alert-toast--right",
     visible ? "is-visible" : "",
-    `alert-toast--${safeTone}`, // ✅ key line
+    `alert-toast--${safeTone}`, //   key line
   ].join(" ");
 
   return (

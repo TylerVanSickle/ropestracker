@@ -58,6 +58,16 @@ export function getWaitRangeText(waitMin) {
 }
 
 /**
+ * Generate a DB-safe integer "queue order" (bigint-friendly).
+ * Uses microsecond-ish resolution while staying within JS safe integer range.
+ */
+export function makeQueueOrder() {
+  // Date.now() ~ 1.7e12
+  // *1000 => ~1.7e15 (still < 9e15 safe int)
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
+/**
  * WaitlistMe-style estimate simulation (NO skipping).
  * Returns Map(id => { estStartISO, estEndISO, estWaitMin })
  */
@@ -162,11 +172,14 @@ export function computeEstimates({
 export function ensureQueueOrder(entries) {
   // Adds queueOrder to WAITING entries if missing (stable for reorder)
   let changed = false;
-  const next = entries.map((e) => {
-    if (e.status !== "WAITING") return e;
-    if (typeof e.queueOrder === "number") return e;
+  const next = (Array.isArray(entries) ? entries : []).map((e) => {
+    if (!e) return e;
+    if (String(e.status || "").toUpperCase() !== "WAITING") return e;
+    if (Number.isFinite(Number(e.queueOrder)) && Number(e.queueOrder) > 0)
+      return e;
+
     changed = true;
-    return { ...e, queueOrder: Date.now() + Math.random() };
+    return { ...e, queueOrder: makeQueueOrder() };
   });
   return changed ? next : entries;
 }
@@ -174,8 +187,6 @@ export function ensureQueueOrder(entries) {
 /**
  * Public-facing “If you joined RIGHT NOW” estimate (strict FIFO).
  * Returns: { waitMin, estStartISO, estEndISO }
- *
- * This does NOT reveal internal counts; it just returns the time math.
  */
 export function estimateForNewGroupSize({
   totalLines,
@@ -194,8 +205,6 @@ export function estimateForNewGroupSize({
     const status = String(e.status || "").toUpperCase();
 
     if (status === "UP") {
-      // Your estimator expects:
-      // active: [{ linesUsed, endTime }]
       active.push({
         linesUsed: Math.max(1, Number(e.partySize || 1)),
         endTime: e.endTime || null,
@@ -207,16 +216,12 @@ export function estimateForNewGroupSize({
       waiting.push({
         id: e.id,
         partySize: Math.max(1, Number(e.partySize || 1)),
-        queueOrder: e.queueOrder,
+        queueOrder: Number(e.queueOrder || 0),
       });
     }
   }
 
-  waiting.sort((a, b) => {
-    const ao = typeof a.queueOrder === "number" ? a.queueOrder : 0;
-    const bo = typeof b.queueOrder === "number" ? b.queueOrder : 0;
-    return ao - bo;
-  });
+  waiting.sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
 
   const quoteId = "__QUOTE__";
   waiting.push({
@@ -245,6 +250,7 @@ export function estimateForNewGroupSize({
     estEndISO: r.estEndISO,
   };
 }
+
 export function minutesLeft(endTimeISO) {
   if (!endTimeISO) return null;
   const t = new Date(endTimeISO);

@@ -32,7 +32,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
 
-  // ✅ Toast (with tone)
+  //   Toast (with tone)
   const [toastKey, setToastKey] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [toastTone, setToastTone] = useState("info");
@@ -47,18 +47,11 @@ export default function SettingsPage() {
     toastClearRef.current = setTimeout(() => setToastMsg(""), 1800);
   }
 
-  // ✅ Reset confirm modal
+  //  Reset confirm modal
   const [resetOpen, setResetOpen] = useState(false);
 
   function submitPassword(e) {
     e.preventDefault();
-
-    if (!REQUIRED_PASS) {
-      alert(
-        "Settings password is not configured. Add NEXT_PUBLIC_SETTINGS_PASS in .env.local",
-      );
-      return;
-    }
 
     if (passInput === REQUIRED_PASS) {
       try {
@@ -222,11 +215,11 @@ export default function SettingsPage() {
   function onSave() {
     saveSettings(clamped);
 
-    setSavedMsg("Saved ✅");
+    setSavedMsg("Saved  ");
     setTimeout(() => setSavedMsg(""), 1500);
 
-    // ✅ GREEN toast
-    showToast("Saved ✅", "success");
+    //   GREEN toast
+    showToast("Saved  ", "success");
   }
 
   function doResetNow() {
@@ -244,19 +237,19 @@ export default function SettingsPage() {
     saveSettings(defaults);
     clearStaffAuth();
 
-    setSavedMsg("Reset ✅");
+    setSavedMsg("Reset  ");
     setTimeout(() => setSavedMsg(""), 1500);
 
-    showToast("Reset ✅", "warning");
+    showToast("Reset  ", "warning");
   }
 
   function logoutStaff() {
     clearStaffAuth();
 
-    setSavedMsg("Staff logged out ✅");
+    setSavedMsg("Staff logged out  ");
     setTimeout(() => setSavedMsg(""), 1500);
 
-    showToast("Staff logged out ✅", "info");
+    showToast("Staff logged out  ", "info");
   }
 
   return (
@@ -283,7 +276,7 @@ export default function SettingsPage() {
             Back
           </Link>
 
-          {/* ✅ now confirms */}
+          {/*   now confirms */}
           <button
             className="button"
             onClick={() => setResetOpen(true)}
@@ -509,7 +502,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ✅ Confirm reset */}
+      {/*   Confirm reset */}
       <ConfirmModal
         open={resetOpen}
         title="Reset settings?"

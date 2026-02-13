@@ -52,7 +52,7 @@ export function clampText(value, max) {
   return trimmedStart.slice(0, max);
 }
 
-// ✅ exported because app/page.js imports it
+//   exported because app/page.js imports it
 export function digitsOnlyMax(s, maxDigits) {
   const raw = String(s ?? "");
   const digits = raw.replace(/\D/g, "");
@@ -204,13 +204,13 @@ export function loadSettings() {
     const clientTheme =
       t === "dark" || t === "light" || t === "auto" ? t : "auto";
 
-    // ✅ PIN: digits only, max 4
+    //   PIN: digits only, max 4
     const staffPin = digitsOnlyMax(
       parsed.staffPin ?? DEFAULT_SETTINGS.staffPin,
       LIMITS.staffPinMaxDigits,
     );
 
-    // ✅ Flow control (Top can pause Bottom send-ups)
+    //   Flow control (Top can pause Bottom send-ups)
     const flowPaused = Boolean(
       parsed.flowPaused ?? DEFAULT_SETTINGS.flowPaused,
     );
@@ -263,10 +263,10 @@ export function saveSettings(next) {
 
     localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(merged));
 
-    // ✅ this is the "signal" that forces other screens to refresh
+    //   this is the "signal" that forces other screens to refresh
     localStorage.setItem(LS_KEY_UPDATED_AT, new Date().toISOString());
 
-    // ✅ if your subscribeToRopesStorage listens to a custom event, fire it
+    //   if your subscribeToRopesStorage listens to a custom event, fire it
     window.dispatchEvent(new Event("ropes_storage"));
   } catch {
     // ignore
@@ -304,10 +304,10 @@ export function subscribeToRopesStorage(cb) {
 
   const handler = () => cb?.();
 
-  // ✅ same-tab updates (our explicit signal)
+  //   same-tab updates (our explicit signal)
   window.addEventListener("ropes_storage", handler);
 
-  // ✅ cross-tab updates (native storage event)
+  //   cross-tab updates (native storage event)
   const onStorage = (e) => {
     if (!e) return;
     if (

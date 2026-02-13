@@ -72,7 +72,7 @@ export default function UpNowList({
 }) {
   const safeActive = Array.isArray(active) ? active : [];
 
-  // ✅ total "people/lines" currently on course (sum of partySize)
+  //   total "people/lines" currently on course (sum of partySize)
   const activeLinesUsed = safeActive.reduce(
     (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
     0,
@@ -100,7 +100,7 @@ export default function UpNowList({
           safeActive.map((e) => {
             const endMs = e.endTime ? new Date(e.endTime).getTime() : null;
 
-            // ✅ can be negative (overdue)
+            //   can be negative (overdue)
             const secsDiff =
               endMs != null && Number.isFinite(endMs)
                 ? Math.floor((endMs - now.getTime()) / 1000)

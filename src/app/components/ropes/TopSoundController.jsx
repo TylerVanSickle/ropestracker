@@ -10,7 +10,7 @@ import { loadSettings } from "@/app/lib/ropesStore";
  */
 export default function TopSoundController({
   entries = [],
-  sentUpField = "sentUpAt", // your entry uses sentUpAt already ✅
+  sentUpField = "sentUpAt", // your entry uses sentUpAt already
 }) {
   const [unlocked, setUnlocked] = useState(false);
 

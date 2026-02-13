@@ -75,7 +75,7 @@ export default function ReservationsPage() {
     return {
       name: "",
       phoneDigits: "",
-      partySizeInput: "1", // ✅ string input so backspace works
+      partySizeInput: "1", //   string input so backspace works
       notes: "",
       reserveAtLocal: toLocalDatetimeValue(in20),
     };
@@ -126,7 +126,7 @@ export default function ReservationsPage() {
 
     const notes = clampText(form.notes, LIMITS.entryIntakeNotes).trim();
 
-    // ✅ clamp party size here (not on every keystroke)
+    //   clamp party size here (not on every keystroke)
     const partySizeRaw = Number(
       String(form.partySizeInput || "").replace(/\D/g, ""),
     );

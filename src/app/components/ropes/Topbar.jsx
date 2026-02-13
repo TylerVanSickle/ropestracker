@@ -16,7 +16,7 @@ export default function Topbar({
   onOpenClient,
   onOpenPrint,
 
-  // ✅ reservations popup
+  //   reservations popup
   onOpenReservations,
   reservationsCount = 0,
 }) {
@@ -70,7 +70,7 @@ export default function Topbar({
             Undo
           </button>
 
-          {/* ✅ popup button */}
+          {/*   popup button */}
           <button
             className="button"
             type="button"

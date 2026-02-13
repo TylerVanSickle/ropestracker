@@ -1,13 +1,9 @@
+// src/app/client/page.jsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  loadEntries,
-  loadSettings,
-  loadUpdatedAt,
-  formatTime,
-  subscribeToRopesStorage,
-} from "../lib/ropesStore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { formatTime } from "../lib/ropesStore";
 import {
   ensureQueueOrder,
   computeEstimates,
@@ -16,11 +12,31 @@ import {
 } from "../lib/ropesUtils";
 
 const COMMON_SIZES = [2, 4, 6];
-const POLL_MS = 2500;
+const FALLBACK_REFRESH_MS = 15000;
+
+function makeSupabaseBrowser() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return null;
+  return createClient(url, anon, {
+    auth: { persistSession: false },
+    realtime: { params: { eventsPerSecond: 20 } },
+  });
+}
 
 function cleanName(v) {
   const s = String(v ?? "").trim();
   return s || "Guest";
+}
+
+// "Tyler VanSickle" -> "Tyler V."
+function publicDisplayName(entry) {
+  const raw = cleanName(entry?.name);
+  const parts = raw.split(/\s+/).filter(Boolean);
+  const first = parts[0] || "Guest";
+  const last = parts[1] || "";
+  const lastInitial = last ? `${last[0].toUpperCase()}.` : "";
+  return `${first}${lastInitial ? " " + lastInitial : ""}`.slice(0, 24);
 }
 
 function isFullscreenNow() {
@@ -37,6 +53,51 @@ async function requestFullscreen() {
   }
 }
 
+function mapDbSettings(db) {
+  if (!db || typeof db !== "object") return null;
+  return {
+    siteId: db.site_id ?? null,
+    totalLines: Number(db.total_lines ?? 15),
+    durationMin: Number(db.duration_min ?? 45),
+    topDurationMin: Number(db.top_duration_min ?? 35),
+    stagingDurationMin: Number(db.staging_duration_min ?? 45),
+    paused: Boolean(db.paused ?? false),
+    venueName: String(db.venue_name ?? "Ropes Course Waitlist"),
+    clientTheme: String(db.client_theme ?? "auto"),
+    flowPaused: Boolean(db.flow_paused ?? false),
+    flowPauseReason: String(db.flow_pause_reason ?? ""),
+  };
+}
+
+function mapDbEntry(db) {
+  if (!db || typeof db !== "object") return null;
+  return {
+    id: db.id,
+    name: db.name ?? "Guest",
+    partySize: Number(db.party_size ?? 1),
+    phone: db.phone ?? "",
+    notes: db.notes ?? "",
+    status: String(db.status ?? "WAITING"),
+    coursePhase: db.course_phase ?? null,
+    queueOrder:
+      typeof db.queue_order === "number"
+        ? db.queue_order
+        : Number(db.queue_order ?? 0),
+    assignedTag: db.assigned_tag ?? null,
+    linesUsed: Number(db.lines_used ?? Number(db.party_size ?? 1)),
+    createdAt: db.created_at ?? null,
+    endTime: db.end_time ?? null,
+  };
+}
+
+function upsertById(list, item) {
+  const idx = list.findIndex((x) => x.id === item.id);
+  if (idx < 0) return [...list, item];
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...item };
+  return next;
+}
+
 function buildLists(entries) {
   const normalized = ensureQueueOrder(Array.isArray(entries) ? entries : []);
 
@@ -45,10 +106,8 @@ function buildLists(entries) {
 
   for (const e of normalized) {
     const status = String(e.status || "").toUpperCase();
-
-    if (status === "DONE" || status === "FINISHED" || status === "COMPLETE") {
+    if (status === "DONE" || status === "FINISHED" || status === "COMPLETE")
       continue;
-    }
 
     if (status === "UP") up.push(e);
     else if (status === "WAITING") waiting.push(e);
@@ -65,31 +124,181 @@ function buildLists(entries) {
 }
 
 export default function ClientPage() {
-  const [settings, setSettings] = useState(() => loadSettings());
-  const [entries, setEntries] = useState(() => loadEntries());
-  const [updatedAt, setUpdatedAt] = useState(() => loadUpdatedAt());
+  const [settings, setSettings] = useState({
+    totalLines: 15,
+    durationMin: 45,
+    paused: false,
+    venueName: "Ropes Course Waitlist",
+    clientTheme: "auto",
+  });
+
+  const [entries, setEntries] = useState([]);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const [activated, setActivated] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   const nowDate = useMemo(() => new Date(nowTick), [nowTick]);
 
-  const refreshFromStorage = () => {
-    setSettings(loadSettings());
-    setEntries(loadEntries());
-    setUpdatedAt(loadUpdatedAt());
-    setNowTick(Date.now());
-  };
+  const sbRef = useRef(null);
+  const siteIdRef = useRef(null);
+  const channelRef = useRef(null);
+  const [online, setOnline] = useState(false);
 
   useEffect(() => {
-    const unsub = subscribeToRopesStorage(refreshFromStorage);
-    const t = setInterval(refreshFromStorage, POLL_MS);
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function loadSiteId(sb) {
+    if (siteIdRef.current) return siteIdRef.current;
+
+    // You said your health endpoint shows slug "main"
+    const { data, error } = await sb
+      .from("ropes_sites")
+      .select("id, slug")
+      .eq("slug", "main")
+      .single();
+
+    if (error) throw error;
+    if (!data?.id) throw new Error("No site id found for slug 'main'.");
+
+    siteIdRef.current = data.id;
+    return data.id;
+  }
+
+  async function refreshPublic() {
+    const sb = sbRef.current;
+    if (!sb) return;
+
+    try {
+      const siteId = await loadSiteId(sb);
+
+      const [{ data: s, error: se }, { data: rows, error: ee }] =
+        await Promise.all([
+          sb.from("ropes_settings").select("*").eq("site_id", siteId).single(),
+          sb
+            .from("ropes_entries_live")
+            .select("*")
+            .eq("site_id", siteId)
+            .order("queue_order", { ascending: true }),
+        ]);
+
+      if (se) throw se;
+      if (ee) throw ee;
+
+      const mappedSettings = mapDbSettings(s);
+      const mappedEntries = (Array.isArray(rows) ? rows : [])
+        .map(mapDbEntry)
+        .filter(Boolean);
+
+      if (mappedSettings) setSettings(mappedSettings);
+      setEntries(ensureQueueOrder(mappedEntries));
+      setUpdatedAt(new Date().toISOString());
+      setOnline(true);
+    } catch (e) {
+      setOnline(false);
+    }
+  }
+
+  // Initial load + fallback refresh
+  useEffect(() => {
+    const sb = sbRef.current || makeSupabaseBrowser();
+    sbRef.current = sb;
+
+    if (!sb) return;
+
+    refreshPublic();
+
+    const t = setInterval(() => refreshPublic(), FALLBACK_REFRESH_MS);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Realtime subscribe
+  useEffect(() => {
+    const sb = sbRef.current;
+    if (!sb) return;
+
+    let cancelled = false;
+
+    async function sub() {
+      try {
+        const siteId = await loadSiteId(sb);
+        if (!siteId || cancelled) return;
+
+        try {
+          if (channelRef.current) sb.removeChannel(channelRef.current);
+        } catch {}
+        channelRef.current = null;
+
+        const ch = sb
+          .channel(`rt-client:${siteId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "ropes_entries_live",
+              filter: `site_id=eq.${siteId}`,
+            },
+            (payload) => {
+              const ev = payload?.eventType;
+              if (!ev) return;
+
+              setEntries((prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+
+                if (ev === "DELETE") {
+                  const id = payload?.old?.id;
+                  if (!id) return list;
+                  return ensureQueueOrder(list.filter((e) => e.id !== id));
+                }
+
+                const row = payload?.new;
+                const mapped = mapDbEntry(row);
+                if (!mapped) return list;
+
+                return ensureQueueOrder(upsertById(list, mapped));
+              });
+
+              setUpdatedAt(new Date().toISOString());
+              setOnline(true);
+            },
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "ropes_settings",
+              filter: `site_id=eq.${siteId}`,
+            },
+            (payload) => {
+              const mapped = mapDbSettings(payload?.new);
+              if (!mapped) return;
+              setSettings(mapped);
+              setUpdatedAt(new Date().toISOString());
+              setOnline(true);
+            },
+          )
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") setOnline(true);
+          });
+
+        channelRef.current = ch;
+      } catch {
+        setOnline(false);
+      }
+    }
+
+    sub();
 
     return () => {
-      unsub?.();
-      clearInterval(t);
+      cancelled = true;
     };
   }, []);
 
+  // Fullscreen exit handling
   useEffect(() => {
     const handler = () => {
       if (!isFullscreenNow()) setActivated(false);
@@ -107,6 +316,7 @@ export default function ClientPage() {
 
   const durationMin = settings?.durationMin ?? 45;
   const totalLines = settings?.totalLines ?? 15;
+
   const closed = !!settings?.paused;
 
   const venueName = useMemo(() => {
@@ -204,6 +414,7 @@ export default function ClientPage() {
       };
     }
 
+    // IMPORTANT: avoid flicker by using live derived state only
     if (up.length === 0) {
       return {
         badge: "Ready",
@@ -242,6 +453,10 @@ export default function ClientPage() {
             <div className="client-pill live-pill">
               <span className={`live-dot ${closed ? "closed" : ""}`} />
               {closed ? "Closed" : "Live"}
+            </div>
+
+            <div className="client-pill" title="Realtime connection">
+              {online ? "Realtime" : "Offline"}
             </div>
 
             {updatedLabel ? (
@@ -321,7 +536,7 @@ export default function ClientPage() {
               <>
                 <div className="client-nextbox">
                   <div className="client-nextname">
-                    {cleanName(nextUp.name)}
+                    {publicDisplayName(nextUp)}
                   </div>
 
                   <div className="client-nextmeta">
