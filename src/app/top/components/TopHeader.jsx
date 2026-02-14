@@ -40,7 +40,8 @@ export default function TopHeader({
             Settings
           </Link>
 
-          <FlowControlButton className="button" />
+          {/* ✅ pass DB-backed settings down */}
+          <FlowControlButton className="button" settings={settings} />
         </div>
 
         {/* RIGHT: Status cards */}

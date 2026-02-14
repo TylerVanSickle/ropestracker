@@ -49,7 +49,8 @@ function mapDbSettings(db) {
     paused: Boolean(db.paused ?? false),
     venueName: String(db.venue_name ?? "Ropes Course"),
     clientTheme: String(db.client_theme ?? "auto"),
-    staffPin: String(db.staff_pin ?? ""),
+
+    // ✅ DB-backed flow pause
     flowPaused: Boolean(db.flow_paused ?? false),
     flowPauseReason: String(db.flow_pause_reason ?? ""),
     flowPausedAt: db.flow_paused_at ?? null,
@@ -111,7 +112,10 @@ function toDbPatchFromUi(patch) {
 
 // ---------- API wrappers (staff-only) ----------
 async function stateGet() {
-  const res = await fetch("/api/state", { method: "GET" });
+  const res = await fetch("/api/state", {
+    method: "GET",
+    credentials: "include", // ✅ ensure staff cookie is sent
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.ok)
     throw new Error(json?.error || "Failed to load state.");
@@ -122,6 +126,7 @@ async function statePut(body) {
   const res = await fetch("/api/state", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
+    credentials: "include", // ✅ ensure staff cookie is sent
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
@@ -210,6 +215,41 @@ export default function TopRopesPage() {
     }
   }
 
+  // ✅ DB-backed flow pause setter
+  async function setFlowPauseRemote({ paused, reason }) {
+    const patch = {
+      flow_paused: Boolean(paused),
+      flow_pause_reason: paused ? String(reason || "").slice(0, 200) : "",
+      flow_paused_at: paused ? new Date().toISOString() : null,
+    };
+
+    // optimistic local
+    setSettings((s) => ({
+      ...s,
+      flowPaused: patch.flow_paused,
+      flowPauseReason: patch.flow_pause_reason,
+      flowPausedAt: patch.flow_paused_at,
+    }));
+
+    try {
+      await statePut({ settingsPatch: patch });
+      setRemoteOnline(true);
+      showToast(patch.flow_paused ? "Flow paused" : "Flow resumed", "success");
+    } catch (e) {
+      setRemoteOnline(false);
+      showToast(String(e?.message || "Couldn’t sync flow pause"), "warning");
+    }
+  }
+
+  function pauseFlow() {
+    const reason = prompt("Pause reason? (optional)") || "";
+    setFlowPauseRemote({ paused: true, reason });
+  }
+
+  function resumeFlow() {
+    setFlowPauseRemote({ paused: false, reason: "" });
+  }
+
   // Mount: local -> server; focus/visibility refresh
   useEffect(() => {
     refreshFromLocal();
@@ -274,7 +314,7 @@ export default function TopRopesPage() {
               const list = Array.isArray(prev) ? prev : [];
 
               if (ev === "DELETE") {
-                const id = payload?.old?.id;
+                const id = payload?.old?.id || payload?.old?.live_entry_id;
                 if (!id) return list;
                 return list.filter((e) => e.id !== id);
               }
@@ -316,6 +356,10 @@ export default function TopRopesPage() {
 
     return () => {
       cancelled = true;
+      try {
+        if (channelRef.current) sb.removeChannel(channelRef.current);
+      } catch {}
+      channelRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -357,7 +401,6 @@ export default function TopRopesPage() {
         payload: { id: entryId, patch: toDbPatchFromUi(uiPatch) },
       });
       setRemoteOnline(true);
-      // Realtime will reflect final state; no need to refresh
     } catch {
       setRemoteOnline(false);
       showToast("Saved locally — couldn’t sync", "warning");
@@ -371,6 +414,7 @@ export default function TopRopesPage() {
   function handleStartCourse(entry) {
     if (!entry) return;
     if (closed) return;
+    if (settings?.flowPaused) return; // ✅ respect flow pause
     if (!entry.assignedTag) return;
 
     const TOP_MIN = Number(settings?.topDurationMin ?? 35);
@@ -413,7 +457,7 @@ export default function TopRopesPage() {
   async function confirmFinish() {
     if (!finishEntry?.id) return;
 
-    // optimistic local (remove or mark done)
+    // optimistic local (remove)
     setEntries((prev) => prev.filter((e) => e.id !== finishEntry.id));
 
     try {
@@ -426,6 +470,7 @@ export default function TopRopesPage() {
         },
       });
       setRemoteOnline(true);
+      refreshFromServer();
     } catch {
       setRemoteOnline(false);
       showToast("Finished locally — couldn’t sync", "warning");
@@ -661,11 +706,6 @@ export default function TopRopesPage() {
         side="right"
       />
 
-      {/* <div className="muted helper" style={{ marginBottom: 8 }}>
-        Sync:{" "}
-        {remoteOnline ? "Online (Supabase Realtime)" : "Offline (fallback)"}
-      </div> */}
-
       <TopHeader
         closed={closed}
         availableLines={availableLines}
@@ -674,6 +714,9 @@ export default function TopRopesPage() {
         courseCount={courseCount}
         waitingCount={waitingCount}
         settings={settings}
+        remoteOnline={remoteOnline}
+        onPauseFlow={pauseFlow}
+        onResumeFlow={resumeFlow}
       />
 
       <div className="topBody">
@@ -724,7 +767,9 @@ export default function TopRopesPage() {
         title="Finish group?"
         message={
           finishEntry
-            ? `Finish "${String(finishEntry.name || "this group")}"?\n\nThis will mark them DONE and move them to history.`
+            ? `Finish "${String(
+                finishEntry.name || "this group",
+              )}"?\n\nThis will mark them DONE and move them to history.`
             : ""
         }
         confirmText="Finish"

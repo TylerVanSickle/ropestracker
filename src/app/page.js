@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   loadEntries,
   loadSettings,
+  saveSettings, // ✅ ADD THIS
   saveEntries,
   uid,
   subscribeToRopesStorage,
@@ -79,6 +80,53 @@ function makeClientUuid() {
   }
   // Fallback: if your uid() is not a UUID, the server will ignore it and DB will generate.
   return uid();
+}
+
+// ✅ Simple collapsible — NO effects, NO persistence (fixes your lint rule)
+function CollapsibleCard({ title, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(Boolean(defaultOpen));
+  return (
+    <section className="card spacer-sm" style={{ padding: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="button"
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          padding: "12px 12px",
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <strong style={{ fontSize: 14 }}>{title}</strong>
+          <span className="muted helper" style={{ margin: 0 }}>
+            {open ? "Hide" : "Show"}
+          </span>
+        </div>
+
+        <span
+          aria-hidden="true"
+          style={{
+            fontSize: 14,
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 120ms ease",
+            lineHeight: 1,
+          }}
+        >
+          ▾
+        </span>
+      </button>
+
+      {open ? <div style={{ padding: "0 12px 12px" }}>{children}</div> : null}
+    </section>
+  );
 }
 
 // DB -> UI mapping (snake_case -> camelCase used in your app)
@@ -205,7 +253,6 @@ async function statePut(body) {
   return json;
 }
 
-// ---------- local helper: apply realtime change ----------
 function upsertById(list, item) {
   const idx = list.findIndex((x) => x.id === item.id);
   if (idx < 0) return [...list, item];
@@ -307,7 +354,6 @@ export default function Home() {
       if (!remoteOnline) refreshFromLocal();
     });
     return () => unsub?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteOnline]);
 
   // focus + visibility refresh
@@ -323,7 +369,6 @@ export default function Home() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // clock tick
@@ -338,7 +383,6 @@ export default function Home() {
       refreshFromLocal();
       await refreshFromServer();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // fallback refresh (slow) in case realtime drops
@@ -347,7 +391,6 @@ export default function Home() {
       refreshFromServer();
     }, FALLBACK_REFRESH_MS);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Setup Supabase Realtime subscription once we know site_id
@@ -401,7 +444,7 @@ export default function Home() {
             });
 
             setRemoteOnline(true);
-          }
+          },
         )
         .on(
           "postgres_changes",
@@ -418,7 +461,7 @@ export default function Home() {
             setSettings(mapped);
             siteIdRef.current = mapped.siteId || siteIdRef.current;
             setRemoteOnline(true);
-          }
+          },
         )
         .subscribe((status) => {
           if (status === "SUBSCRIBED") setRemoteOnline(true);
@@ -436,7 +479,6 @@ export default function Home() {
       } catch {}
       channelRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // keep local cache up to date
@@ -478,13 +520,13 @@ export default function Home() {
 
   const active = useMemo(
     () => entries.filter((e) => e.status === "UP"),
-    [entries]
+    [entries],
   );
 
   const occupiedLines = useMemo(() => {
     return active.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
-      0
+      0,
     );
   }, [active]);
 
@@ -560,7 +602,7 @@ export default function Home() {
 
   const reservationsCount = useMemo(
     () => entries.filter((e) => e.status === "RESERVED").length,
-    [entries]
+    [entries],
   );
 
   // Overdue loop → warning toast
@@ -625,8 +667,8 @@ export default function Home() {
                 ...e,
                 lastNotifiedAt: new Date().toISOString(),
                 notifiedCount: (e.notifiedCount || 0) + 1,
-              }
-        )
+              },
+        ),
       );
 
       fireToast("Text sent", "success");
@@ -717,7 +759,6 @@ export default function Home() {
         });
 
         setRemoteOnline(true);
-        // realtime will push; fallback refresh handles recovery
       } catch (err) {
         console.error("CREATE_ENTRY failed:", err);
         setRemoteOnline(false);
@@ -735,7 +776,7 @@ export default function Home() {
       alert(
         s.flowPauseReason
           ? `Flow paused: ${s.flowPauseReason}`
-          : "Flow is currently paused."
+          : "Flow is currently paused.",
       );
       return;
     }
@@ -757,20 +798,20 @@ export default function Home() {
     const activePrev = entries.filter((e) => e.status === "UP");
     const occupiedPrev = activePrev.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
-      0
+      0,
     );
     const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
     const linesNeeded = Math.max(1, Number(front.partySize || 1));
 
     if (linesNeeded > settings.totalLines) {
       alert(
-        `This party needs ${linesNeeded} lines, but total available is ${settings.totalLines}.`
+        `This party needs ${linesNeeded} lines, but total available is ${settings.totalLines}.`,
       );
       return;
     }
     if (linesNeeded > availablePrev) {
       alert(
-        `Not enough sling lines available. Available: ${availablePrev}, needed: ${linesNeeded}.`
+        `Not enough sling lines available. Available: ${availablePrev}, needed: ${linesNeeded}.`,
       );
       return;
     }
@@ -809,7 +850,7 @@ export default function Home() {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
       return prev.map((e) =>
-        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e
+        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e,
       );
     });
 
@@ -961,8 +1002,8 @@ export default function Home() {
                   id: x.id,
                   patch: { status: "WAITING", queue_order: x.queueOrder },
                 },
-              })
-            )
+              }),
+            ),
           ).catch(() => setRemoteOnline(false));
         }
 
@@ -1076,7 +1117,7 @@ export default function Home() {
                 value={pinInput}
                 onChange={(e) =>
                   setPinInput(
-                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits)
+                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits),
                   )
                 }
                 inputMode="numeric"
@@ -1114,32 +1155,29 @@ export default function Home() {
         reservationsCount={reservationsCount}
       />
 
-      {/* <div className="muted helper" style={{ marginTop: 6 }}>
-        Sync:{" "}
-        {remoteOnline
-          ? "Online (Supabase Realtime)"
-          : "Offline (local fallback)"}
-      </div> */}
-
       <FlowPausedBanner settings={settings} />
       <CourseClosedBanner settings={settings} />
 
-      <NextUpActions
-        nextWaiting={nextWaiting}
-        nextEstStartText={nextEstStartText}
-        nextWaitRange={nextWaitRange}
-        canStartNow={nextCanStartNow}
-        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
-        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
-        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
-        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
-      />
-      
-      <QuickQuote
-        quoteSizeInput={quoteSizeInput}
-        setQuoteSizeInput={setQuoteSizeInput}
-        quoteResult={quoteResult}
-      />
+      <CollapsibleCard title="Next up actions" defaultOpen={false}>
+        <NextUpActions
+          nextWaiting={nextWaiting}
+          nextEstStartText={nextEstStartText}
+          nextWaitRange={nextWaitRange}
+          canStartNow={nextCanStartNow}
+          onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
+          onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
+          onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
+          onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
+        />
+      </CollapsibleCard>
+
+      <CollapsibleCard title="Quick wait quote" defaultOpen={false}>
+        <QuickQuote
+          quoteSizeInput={quoteSizeInput}
+          setQuoteSizeInput={setQuoteSizeInput}
+          quoteResult={quoteResult}
+        />
+      </CollapsibleCard>
 
       <AddGuestForm
         newGuest={newGuest}
