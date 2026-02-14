@@ -401,7 +401,7 @@ export default function Home() {
             });
 
             setRemoteOnline(true);
-          },
+          }
         )
         .on(
           "postgres_changes",
@@ -418,7 +418,7 @@ export default function Home() {
             setSettings(mapped);
             siteIdRef.current = mapped.siteId || siteIdRef.current;
             setRemoteOnline(true);
-          },
+          }
         )
         .subscribe((status) => {
           if (status === "SUBSCRIBED") setRemoteOnline(true);
@@ -478,13 +478,13 @@ export default function Home() {
 
   const active = useMemo(
     () => entries.filter((e) => e.status === "UP"),
-    [entries],
+    [entries]
   );
 
   const occupiedLines = useMemo(() => {
     return active.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
-      0,
+      0
     );
   }, [active]);
 
@@ -560,7 +560,7 @@ export default function Home() {
 
   const reservationsCount = useMemo(
     () => entries.filter((e) => e.status === "RESERVED").length,
-    [entries],
+    [entries]
   );
 
   // Overdue loop → warning toast
@@ -625,8 +625,8 @@ export default function Home() {
                 ...e,
                 lastNotifiedAt: new Date().toISOString(),
                 notifiedCount: (e.notifiedCount || 0) + 1,
-              },
-        ),
+              }
+        )
       );
 
       fireToast("Text sent", "success");
@@ -735,7 +735,7 @@ export default function Home() {
       alert(
         s.flowPauseReason
           ? `Flow paused: ${s.flowPauseReason}`
-          : "Flow is currently paused.",
+          : "Flow is currently paused."
       );
       return;
     }
@@ -757,20 +757,20 @@ export default function Home() {
     const activePrev = entries.filter((e) => e.status === "UP");
     const occupiedPrev = activePrev.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
-      0,
+      0
     );
     const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
     const linesNeeded = Math.max(1, Number(front.partySize || 1));
 
     if (linesNeeded > settings.totalLines) {
       alert(
-        `This party needs ${linesNeeded} lines, but total available is ${settings.totalLines}.`,
+        `This party needs ${linesNeeded} lines, but total available is ${settings.totalLines}.`
       );
       return;
     }
     if (linesNeeded > availablePrev) {
       alert(
-        `Not enough sling lines available. Available: ${availablePrev}, needed: ${linesNeeded}.`,
+        `Not enough sling lines available. Available: ${availablePrev}, needed: ${linesNeeded}.`
       );
       return;
     }
@@ -809,7 +809,7 @@ export default function Home() {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
       return prev.map((e) =>
-        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e,
+        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e
       );
     });
 
@@ -961,8 +961,8 @@ export default function Home() {
                   id: x.id,
                   patch: { status: "WAITING", queue_order: x.queueOrder },
                 },
-              }),
-            ),
+              })
+            )
           ).catch(() => setRemoteOnline(false));
         }
 
@@ -1076,7 +1076,7 @@ export default function Home() {
                 value={pinInput}
                 onChange={(e) =>
                   setPinInput(
-                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits),
+                    digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits)
                   )
                 }
                 inputMode="numeric"
@@ -1124,6 +1124,17 @@ export default function Home() {
       <FlowPausedBanner settings={settings} />
       <CourseClosedBanner settings={settings} />
 
+      <NextUpActions
+        nextWaiting={nextWaiting}
+        nextEstStartText={nextEstStartText}
+        nextWaitRange={nextWaitRange}
+        canStartNow={nextCanStartNow}
+        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
+        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
+        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
+        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
+      />
+      
       <QuickQuote
         quoteSizeInput={quoteSizeInput}
         setQuoteSizeInput={setQuoteSizeInput}
@@ -1134,17 +1145,6 @@ export default function Home() {
         newGuest={newGuest}
         setNewGuest={setNewGuest}
         onAddGuest={addGuest}
-      />
-
-      <NextUpActions
-        nextWaiting={nextWaiting}
-        nextEstStartText={nextEstStartText}
-        nextWaitRange={nextWaitRange}
-        canStartNow={nextCanStartNow}
-        onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
-        onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
-        onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
-        onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
       />
 
       <section className="grid-2 spacer-md">
