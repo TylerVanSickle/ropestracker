@@ -4,7 +4,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-import { loadEntries, loadSettings } from "@/app/lib/ropesStore";
+import {
+  loadEntries,
+  loadSettings,
+  archiveFlaggedEntry, // ✅ NEW
+} from "@/app/lib/ropesStore";
 import { COURSE_TAG_LABELS } from "../lib/ropesTags";
 
 import ArchiveModal from "@/app/components/ropes/ArchiveModal";
@@ -190,6 +194,7 @@ export default function TopRopesPage() {
   // Finish confirm
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [finishEntry, setFinishEntry] = useState(null);
+  const [finishSaving, setFinishSaving] = useState(false);
 
   function refreshFromLocal() {
     setSettings(loadSettings());
@@ -456,6 +461,9 @@ export default function TopRopesPage() {
 
   async function confirmFinish() {
     if (!finishEntry?.id) return;
+    if (finishSaving) return;
+
+    setFinishSaving(true);
 
     // optimistic local (remove)
     setEntries((prev) => prev.filter((e) => e.id !== finishEntry.id));
@@ -469,12 +477,14 @@ export default function TopRopesPage() {
           finish_reason: "Finished (top)",
         },
       });
+
       setRemoteOnline(true);
       refreshFromServer();
     } catch {
       setRemoteOnline(false);
       showToast("Finished locally — couldn’t sync", "warning");
     } finally {
+      setFinishSaving(false);
       closeFinishConfirm();
     }
   }
@@ -566,7 +576,9 @@ export default function TopRopesPage() {
     }
 
     const ok = confirm(
-      `Merge these groups?\n\n1) ${a.name} (${a.partySize || 1})\n2) ${b.name} (${b.partySize || 1})\n\nThis will combine them into one group.`,
+      `Merge these groups?\n\n1) ${a.name} (${a.partySize || 1})\n2) ${b.name} (${
+        b.partySize || 1
+      })\n\nThis will combine them into one group.`,
     );
     if (!ok) return;
 
@@ -633,8 +645,9 @@ export default function TopRopesPage() {
     setArchiveEntry(null);
   }
 
+  // ✅ UPDATED: writes to ropes_flag_archive first
   async function handleArchiveSubmit({ reason, note, mode }) {
-    if (!archiveEntry) return;
+    if (!archiveEntry?.id) return;
 
     const r = String(reason || "").trim();
     const n = String(note || "").trim();
@@ -646,32 +659,20 @@ export default function TopRopesPage() {
     const combined = n ? `${r} • Note: ${n}` : r;
     const removeFromActive = String(mode) !== "KEEP";
 
-    // optimistic local
-    if (removeFromActive) {
-      setEntries((prev) => prev.filter((e) => e.id !== archiveEntry.id));
-    } else {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id !== archiveEntry.id
-            ? e
-            : {
-                ...e,
-                notes: String(e.notes || "")
-                  ? `${String(e.notes).slice(0, 180)} • FLAG: ${combined}`.slice(
-                      0,
-                      220,
-                    )
-                  : `FLAG: ${combined}`.slice(0, 220),
-              },
-        ),
-      );
-    }
-
-    setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
-    closeArchive();
-
     try {
+      // 1) Insert into DB archive table
+      await archiveFlaggedEntry({
+        entryId: archiveEntry.id,
+        archivedBy: "top",
+        reason: combined,
+        removeFromActive: false, // we handle local remove below
+        cleanupGuestNotes: true,
+      });
+
+      // 2) Existing behavior: move to history OR mark notes
       if (removeFromActive) {
+        setEntries((prev) => prev.filter((e) => e.id !== archiveEntry.id));
+
         await statePut({
           op: "MOVE_TO_HISTORY",
           payload: {
@@ -681,6 +682,22 @@ export default function TopRopesPage() {
           },
         });
       } else {
+        setEntries((prev) =>
+          prev.map((e) =>
+            e.id !== archiveEntry.id
+              ? e
+              : {
+                  ...e,
+                  notes: String(e.notes || "")
+                    ? `${String(e.notes).slice(
+                        0,
+                        180,
+                      )} • FLAG: ${combined}`.slice(0, 220)
+                    : `FLAG: ${combined}`.slice(0, 220),
+                },
+          ),
+        );
+
         await statePut({
           op: "PATCH_ENTRY",
           payload: {
@@ -689,10 +706,15 @@ export default function TopRopesPage() {
           },
         });
       }
+
       setRemoteOnline(true);
-    } catch {
+      setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
+      closeArchive();
+      showToast("Archived", "success");
+    } catch (e) {
       setRemoteOnline(false);
-      showToast("Archived locally — couldn’t sync", "warning");
+      showToast(String(e?.message || "Archive failed"), "warning");
+      // keep modal open so they can retry
     }
   }
 
@@ -772,10 +794,10 @@ export default function TopRopesPage() {
               )}"?\n\nThis will mark them DONE and move them to history.`
             : ""
         }
-        confirmText="Finish"
+        confirmText={finishSaving ? "Saving..." : "Finish"} // ✅ dynamic text
         cancelText="Cancel"
         tone="danger"
-        onClose={closeFinishConfirm}
+        onClose={finishSaving ? undefined : closeFinishConfirm} // ✅ prevent close
         onConfirm={confirmFinish}
       />
 

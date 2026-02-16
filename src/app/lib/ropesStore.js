@@ -514,12 +514,12 @@ export function saveFlagArchive(list) {
   saveList(LS_KEY_FLAG_ARCHIVE, list, "FLAG_ARCHIVE_UPDATED");
 }
 
-export function archiveFlaggedEntry({
+export async function archiveFlaggedEntry({
   entryId,
   archivedBy = "top",
   reason = "",
   removeFromActive = true,
-  cleanupGuestNotes = false, // set true if you want to prune notes after archiving
+  cleanupGuestNotes = false,
 } = {}) {
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
@@ -529,9 +529,8 @@ export function archiveFlaggedEntry({
 
   const guestNotes = getNotesForEntry(entryId);
 
-  const record = {
-    id: uid(),
-    archivedAt: Date.now(),
+  // Build the snapshot exactly like before
+  const payload = {
     archivedBy: archivedBy === "bottom" ? "bottom" : "top",
     reason: clampText(reason, LIMITS.archiveReasonText).trim(),
     entrySnapshot: {
@@ -552,9 +551,23 @@ export function archiveFlaggedEntry({
     guestNotes: Array.isArray(guestNotes) ? guestNotes : [],
   };
 
-  const list = loadFlagArchive();
-  saveFlagArchive([record, ...list]);
+  // Write to DB
+  let saved = null;
+  try {
+    const res = await fetch("/api/archive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Archive failed");
+    saved = data.record;
+  } catch (e) {
+    // If you want: you can fall back to localStorage here instead of failing.
+    throw e;
+  }
 
+  // Keep your existing local behavior (optional but nice UX)
   if (removeFromActive) {
     const nextEntries = normalized.filter((e) => e.id !== entryId);
     saveEntries(nextEntries);
@@ -565,7 +578,18 @@ export function archiveFlaggedEntry({
   }
 
   stampAll("FLAG_ARCHIVED");
-  return record;
+
+  // Return a normalized shape similar to your old record (so UI won’t explode)
+  return {
+    id: saved?.id,
+    archivedAt: saved?.archived_at
+      ? new Date(saved.archived_at).getTime()
+      : Date.now(),
+    archivedBy: saved?.archived_by || payload.archivedBy,
+    reason: saved?.reason || payload.reason,
+    entrySnapshot: saved?.entry_snapshot || payload.entrySnapshot,
+    guestNotes: saved?.guest_notes || payload.guestNotes,
+  };
 }
 
 export function deleteArchiveRecord(recordId) {
