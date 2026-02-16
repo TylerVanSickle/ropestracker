@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useSearchParams } from "next/navigation";
 import { formatTime } from "../lib/ropesStore";
 import {
   ensureQueueOrder,
@@ -14,6 +15,13 @@ import {
 const COMMON_SIZES = [2, 4, 6];
 const FALLBACK_REFRESH_MS = 15000;
 const SITE_SLUG = "main";
+
+/**
+ * SECURITY NOTES (public page):
+ * - Do NOT fetch phone numbers or internal notes.
+ * - Display only first name + last initial.
+ * - Keep read-only RLS policies for anon.
+ */
 
 function makeSupabaseBrowser() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,11 +49,19 @@ function publicDisplayName(entry) {
   return `${first}${lastInitial ? " " + lastInitial : ""}`.slice(0, 24);
 }
 
-function isFullscreenNow() {
-  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+function canUseDom() {
+  return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+function getFullscreenNowSafe() {
+  if (!canUseDom()) return false;
+  return Boolean(
+    document.fullscreenElement || document.webkitFullscreenElement,
+  );
 }
 
 async function requestFullscreen() {
+  if (!canUseDom()) return;
   const el = document.documentElement;
   try {
     if (el.requestFullscreen) await el.requestFullscreen();
@@ -61,8 +77,6 @@ function mapDbSettings(db) {
     siteId: db.site_id ?? null,
     totalLines: Number(db.total_lines ?? 15),
     durationMin: Number(db.duration_min ?? 45),
-    topDurationMin: Number(db.top_duration_min ?? 35),
-    stagingDurationMin: Number(db.staging_duration_min ?? 45),
     paused: Boolean(db.paused ?? false),
     venueName: String(db.venue_name ?? "Ropes Course Waitlist"),
     clientTheme: String(db.client_theme ?? "auto"),
@@ -77,8 +91,6 @@ function mapDbEntry(db) {
     id: db.id,
     name: db.name ?? "Guest",
     partySize: Number(db.party_size ?? 1),
-    phone: db.phone ?? "",
-    notes: db.notes ?? "",
     status: String(db.status ?? "WAITING"),
     coursePhase: db.course_phase ?? null,
     queueOrder:
@@ -90,6 +102,22 @@ function mapDbEntry(db) {
     createdAt: db.created_at ?? null,
     endTime: db.end_time ?? null,
   };
+}
+
+function summarizeSupabaseError(e) {
+  if (!e) return "Unknown error";
+  const msg = e.message || String(e);
+  const code = e.code ? ` (${e.code})` : "";
+  const details = e.details ? ` — ${e.details}` : "";
+  return `${msg}${code}${details}`.slice(0, 220);
+}
+
+function upsertById(list, item) {
+  const idx = list.findIndex((x) => x.id === item.id);
+  if (idx < 0) return [...list, item];
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...item };
+  return next;
 }
 
 function buildLists(entries) {
@@ -117,23 +145,15 @@ function buildLists(entries) {
   return { up, waiting };
 }
 
-function summarizeSupabaseError(e) {
-  if (!e) return "Unknown error";
-  const msg = e.message || String(e);
-  const code = e.code ? ` (${e.code})` : "";
-  const details = e.details ? ` — ${e.details}` : "";
-  return `${msg}${code}${details}`.slice(0, 220);
-}
-
-function upsertById(list, item) {
-  const idx = list.findIndex((x) => x.id === item.id);
-  if (idx < 0) return [...list, item];
-  const next = list.slice();
-  next[idx] = { ...next[idx], ...item };
-  return next;
-}
-
 export default function ClientPage() {
+  const sp = useSearchParams();
+
+  // URL toggles:
+  //  - /client?tv=1      => kiosk/TV affordances
+  //  - /client?debug=1   => show offline reason in tooltip
+  const tvMode = sp.get("tv") === "1";
+  const debug = sp.get("debug") === "1";
+
   const [settings, setSettings] = useState({
     totalLines: 15,
     durationMin: 45,
@@ -144,7 +164,13 @@ export default function ClientPage() {
 
   const [entries, setEntries] = useState([]);
   const [updatedAt, setUpdatedAt] = useState(null);
+
+  // Fullscreen state must NOT touch document during render
+  const [fullscreen, setFullscreen] = useState(false);
   const [activated, setActivated] = useState(false);
+
+  const [isTouch, setIsTouch] = useState(false);
+  const [isWideScreen, setIsWideScreen] = useState(false); // >= desktop width
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [online, setOnline] = useState(false);
   const [lastError, setLastError] = useState("");
@@ -156,8 +182,48 @@ export default function ClientPage() {
   const channelRef = useRef(null);
 
   useEffect(() => {
+    setIsTouch(
+      typeof window !== "undefined" &&
+        ("ontouchstart" in window || navigator.maxTouchPoints > 0),
+    );
+  }, []);
+
+  // Wide screen detector (bigger than tablet)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mq = window.matchMedia("(min-width: 1024px)"); // tablet-ish cutoff
+    const sync = () => setIsWideScreen(Boolean(mq.matches));
+
+    sync();
+    if (mq.addEventListener) mq.addEventListener("change", sync);
+    else mq.addListener(sync);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", sync);
+      else mq.removeListener(sync);
+    };
+  }, []);
+
+  useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Track fullscreen changes safely
+  useEffect(() => {
+    if (!canUseDom()) return;
+
+    const sync = () => setFullscreen(getFullscreenNowSafe());
+    sync();
+
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
   }, []);
 
   async function loadSiteId(sb) {
@@ -187,20 +253,20 @@ export default function ClientPage() {
     try {
       const siteId = await loadSiteId(sb);
 
-      // Perf win: select only what we use
       const [{ data: s, error: se }, { data: rows, error: ee }] =
         await Promise.all([
           sb
             .from("ropes_settings")
             .select(
-              "site_id,total_lines,duration_min,top_duration_min,staging_duration_min,paused,venue_name,client_theme,flow_paused,flow_pause_reason",
+              "site_id,total_lines,duration_min,paused,venue_name,client_theme,flow_paused,flow_pause_reason",
             )
             .eq("site_id", siteId)
             .maybeSingle(),
+          // SECURITY: intentionally do NOT select phone/notes
           sb
             .from("ropes_entries_live")
             .select(
-              "id,name,party_size,phone,notes,status,course_phase,queue_order,assigned_tag,lines_used,created_at,end_time,site_id",
+              "id,name,party_size,status,course_phase,queue_order,assigned_tag,lines_used,created_at,end_time",
             )
             .eq("site_id", siteId)
             .order("queue_order", { ascending: true }),
@@ -246,7 +312,7 @@ export default function ClientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Realtime: apply payload immediately (instant UI), then refresh truth (debounced)
+  // Realtime: instant UI from payload, then background truth refresh
   useEffect(() => {
     const sb = sbRef.current;
     if (!sb) return;
@@ -290,7 +356,6 @@ export default function ClientPage() {
               const ev = payload?.eventType;
               if (!ev) return;
 
-              // Instant UI update from payload
               setEntries((prev) => {
                 const list = Array.isArray(prev) ? prev : [];
 
@@ -306,7 +371,6 @@ export default function ClientPage() {
                 return ensureQueueOrder(upsertById(list, mapped));
               });
 
-              // Then sync truth in the background
               scheduleRefresh();
             },
           )
@@ -359,18 +423,11 @@ export default function ClientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fullscreen exit handling
+  // If tv=1, treat as "activated" layout-wise (but fullscreen still requires gesture)
   useEffect(() => {
-    const handler = () => {
-      if (!isFullscreenNow()) setActivated(false);
-    };
-    document.addEventListener("fullscreenchange", handler);
-    document.addEventListener("webkitfullscreenchange", handler);
-    return () => {
-      document.removeEventListener("fullscreenchange", handler);
-      document.removeEventListener("webkitfullscreenchange", handler);
-    };
-  }, []);
+    if (!tvMode) return;
+    setActivated(true);
+  }, [tvMode]);
 
   const { up, waiting } = useMemo(() => buildLists(entries), [entries]);
   const nextUp = waiting.length ? waiting[0] : null;
@@ -489,10 +546,19 @@ export default function ClientPage() {
     };
   }, [closed, up.length]);
 
-  const activate = async () => {
+  const activateFullscreen = async () => {
     setActivated(true);
     await requestFullscreen();
+    // fullscreen state will sync via the event listener
   };
+
+  // Only show fullscreen controls on screens bigger than a tablet
+  // (and also allow tv=1 to show them, but still requires wide screen)
+  const showFullscreenControls = isWideScreen && (tvMode || !isTouch);
+
+  const offlineTitle = debug
+    ? lastError || "Realtime connection"
+    : "Realtime connection";
 
   return (
     <div
@@ -516,15 +582,8 @@ export default function ClientPage() {
               {closed ? "Closed" : "Live"}
             </div>
 
-            <div
-              className="client-pill"
-              title={lastError || "Realtime connection"}
-            >
-              {online
-                ? "Realtime"
-                : lastError
-                  ? `Offline: ${lastError}`
-                  : "Offline"}
+            <div className="client-pill" title={offlineTitle}>
+              {online ? "Realtime" : "Offline"}
             </div>
 
             {updatedLabel ? (
@@ -533,13 +592,15 @@ export default function ClientPage() {
               </div>
             ) : null}
 
-            {!activated ? (
-              <button className="client-btn" onClick={activate}>
-                Activate Display Mode
-              </button>
-            ) : (
-              <div className="client-pill">Display Mode Active</div>
-            )}
+            {showFullscreenControls ? (
+              !fullscreen ? (
+                <button className="client-btn" onClick={activateFullscreen}>
+                  {tvMode ? "Start TV Mode" : "Fullscreen"}
+                </button>
+              ) : (
+                <div className="client-pill">Fullscreen</div>
+              )
+            ) : null}
           </div>
         </header>
 
@@ -549,6 +610,21 @@ export default function ClientPage() {
             <div className="paused-sub">
               The ropes course is closed right now. Please check with the front
               desk for the latest timing.
+            </div>
+          </div>
+        ) : null}
+
+        {settings?.flowPaused ? (
+          <div className="paused-banner" style={{ marginTop: 12 }}>
+            <div className="paused-title">Loading Temporarily Paused</div>
+            <div className="paused-sub">
+              Staff are temporarily paused from loading new groups.
+              {String(settings?.flowPauseReason || "").trim() ? (
+                <>
+                  <br />
+                  <b>Reason:</b> {String(settings.flowPauseReason).trim()}
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -587,7 +663,7 @@ export default function ClientPage() {
             </div>
 
             <div className="client-note" style={{ marginTop: 12 }}>
-              Wait times change as groups finish and new groups check in.
+              Wait times update automatically.
             </div>
           </section>
 
@@ -599,6 +675,10 @@ export default function ClientPage() {
             ) : closed ? (
               <div className="client-empty">
                 Loading is closed — staff will call the next group when we open.
+              </div>
+            ) : settings?.flowPaused ? (
+              <div className="client-empty">
+                Loading is paused — please wait for staff instructions.
               </div>
             ) : (
               <>
@@ -625,7 +705,7 @@ export default function ClientPage() {
                 </div>
 
                 <div className="client-note">
-                  Groups load in check-in order.
+                  Names show first name + last initial only.
                 </div>
               </>
             )}
