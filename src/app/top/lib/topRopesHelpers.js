@@ -10,10 +10,10 @@ export function minutesLeft(endTimeISO) {
 
   const diffMs = endMs - Date.now();
 
-  // ✅ For positive time remaining, ceil (e.g. 0.2 min => 1 min left)
+  //   For positive time remaining, ceil (e.g. 0.2 min => 1 min left)
   if (diffMs >= 0) return Math.ceil(diffMs / 60000);
 
-  // ✅ For overdue, become negative immediately (e.g. -10s => -1 min overdue)
+  //   For overdue, become negative immediately (e.g. -10s => -1 min overdue)
   return -Math.ceil(Math.abs(diffMs) / 60000);
 }
 

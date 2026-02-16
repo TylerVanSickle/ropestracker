@@ -26,7 +26,7 @@ export default function ReservationsPopup({
   onClose,
   entries,
   setEntries,
-  nowMs, // ✅ pass from Home to avoid Date.now() during render
+  nowMs, //   pass from Home to avoid Date.now() during render
 }) {
   if (!open) return null;
 

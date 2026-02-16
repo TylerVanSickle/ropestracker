@@ -21,7 +21,7 @@ export default function EditEntryModal({
   onRemove,
   onComplete,
 }) {
-  // ✅ Always define a safeEntry FIRST so hooks are never conditional
+  //   Always define a safeEntry FIRST so hooks are never conditional
   const safeEntry = entry ?? {
     id: "__none__",
     status: "WAITING",
@@ -68,7 +68,7 @@ export default function EditEntryModal({
   const [removeToken, setRemoveToken] = useState(0);
   const [completeToken, setCompleteToken] = useState(0);
 
-  // ✅ AFTER hooks, you can safely bail out
+  //   AFTER hooks, you can safely bail out
   if (!entry) return null;
 
   function save() {

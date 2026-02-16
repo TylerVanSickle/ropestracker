@@ -1,7 +1,12 @@
-//ropestracker/src/app/api/sms/route.js
-// TWILLIO SERVER ROUTE THING
+// src/app/api/sms/route.js
+// TWILIO SERVER ROUTE THING
 
 import twilio from "twilio";
+import { cookies } from "next/headers";
+import {
+  verifyStaffCookieValue,
+  STAFF_COOKIE_NAME,
+} from "@/app/lib/staffWallAuth";
 
 function toE164US(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
@@ -11,8 +16,25 @@ function toE164US(phone) {
   return null;
 }
 
+async function requireStaff() {
+  const secret = process.env.STAFF_WALL_COOKIE_SECRET || "";
+  if (!secret) return false;
+
+  const cookieVal = cookies().get(STAFF_COOKIE_NAME)?.value;
+  return await verifyStaffCookieValue(cookieVal, secret);
+}
+
 export async function POST(req) {
   try {
+    //   Staff-only guard (defense in depth)
+    const authed = await requireStaff();
+    if (!authed) {
+      return Response.json(
+        { ok: false, error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
     const { to, message } = await req.json();
 
     const toE164 = toE164US(to);

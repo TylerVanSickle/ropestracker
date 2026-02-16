@@ -1,18 +1,14 @@
+// src/app/top/page.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 import {
   loadEntries,
   loadSettings,
-  subscribeToRopesStorage,
-  patchEntry,
-  extendEntryByMinutes,
-  markEntryDone,
-  archiveFlaggedEntry,
-  mergeEntries,
+  archiveFlaggedEntry, // ✅ NEW
 } from "@/app/lib/ropesStore";
-
 import { COURSE_TAG_LABELS } from "../lib/ropesTags";
 
 import ArchiveModal from "@/app/components/ropes/ArchiveModal";
@@ -33,17 +29,141 @@ import {
   isoPlusMinutes,
 } from "./lib/topRopesHelpers";
 
+const FALLBACK_REFRESH_MS = 15000;
+
+function makeSupabaseBrowser() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return null;
+  return createClient(url, anon, {
+    auth: { persistSession: false },
+    realtime: { params: { eventsPerSecond: 20 } },
+  });
+}
+
+// ---------- DB mapping helpers ----------
+function mapDbSettings(db) {
+  if (!db || typeof db !== "object") return null;
+  return {
+    siteId: db.site_id ?? null,
+    totalLines: Number(db.total_lines ?? 15),
+    durationMin: Number(db.duration_min ?? 45),
+    topDurationMin: Number(db.top_duration_min ?? 35),
+    stagingDurationMin: Number(db.staging_duration_min ?? 45),
+    paused: Boolean(db.paused ?? false),
+    venueName: String(db.venue_name ?? "Ropes Course"),
+    clientTheme: String(db.client_theme ?? "auto"),
+
+    // ✅ DB-backed flow pause
+    flowPaused: Boolean(db.flow_paused ?? false),
+    flowPauseReason: String(db.flow_pause_reason ?? ""),
+    flowPausedAt: db.flow_paused_at ?? null,
+  };
+}
+
+function mapDbEntry(db) {
+  if (!db || typeof db !== "object") return null;
+  return {
+    id: db.id,
+    name: db.name ?? "Guest",
+    partySize: Number(db.party_size ?? 1),
+    phone: db.phone ?? "",
+    notes: db.notes ?? "",
+    status: String(db.status ?? "WAITING"),
+    coursePhase: db.course_phase ?? null,
+    queueOrder:
+      typeof db.queue_order === "number"
+        ? db.queue_order
+        : Number(db.queue_order ?? 0),
+    assignedTag: db.assigned_tag ?? null,
+    linesUsed: Number(db.lines_used ?? Number(db.party_size ?? 1)),
+    timeAdjustMin: Number(db.time_adjust_min ?? 0),
+
+    createdAt: db.created_at ?? null,
+    sentUpAt: db.sent_up_at ?? null,
+    startedAt: db.started_at ?? null,
+    startTime: db.start_time ?? null,
+    endTime: db.end_time ?? null,
+    endedEarlyAt: db.ended_early_at ?? null,
+  };
+}
+
+function toDbPatchFromUi(patch) {
+  const p = patch || {};
+  const out = {};
+
+  if ("name" in p) out.name = p.name ?? null;
+  if ("partySize" in p) out.party_size = p.partySize ?? null;
+  if ("phone" in p) out.phone = p.phone ? String(p.phone) : null;
+  if ("notes" in p) out.notes = p.notes ? String(p.notes) : null;
+
+  if ("status" in p) out.status = p.status ?? null;
+  if ("coursePhase" in p) out.course_phase = p.coursePhase ?? null;
+  if ("queueOrder" in p) out.queue_order = p.queueOrder ?? null;
+  if ("assignedTag" in p) out.assigned_tag = p.assignedTag ?? null;
+  if ("linesUsed" in p) out.lines_used = p.linesUsed ?? null;
+
+  if ("timeAdjustMin" in p) out.time_adjust_min = p.timeAdjustMin ?? null;
+
+  if ("sentUpAt" in p) out.sent_up_at = p.sentUpAt ?? null;
+  if ("startedAt" in p) out.started_at = p.startedAt ?? null;
+  if ("startTime" in p) out.start_time = p.startTime ?? null;
+  if ("endTime" in p) out.end_time = p.endTime ?? null;
+  if ("endedEarlyAt" in p) out.ended_early_at = p.endedEarlyAt ?? null;
+
+  return out;
+}
+
+// ---------- API wrappers (staff-only) ----------
+async function stateGet() {
+  const res = await fetch("/api/state", {
+    method: "GET",
+    credentials: "include", // ✅ ensure staff cookie is sent
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || "Failed to load state.");
+  return json;
+}
+
+async function statePut(body) {
+  const res = await fetch("/api/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // ✅ ensure staff cookie is sent
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || "Failed to write state.");
+  return json;
+}
+
+function upsertById(list, item) {
+  const idx = list.findIndex((x) => x.id === item.id);
+  if (idx < 0) return [...list, item];
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...item };
+  return next;
+}
+
 export default function TopRopesPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [entries, setEntries] = useState(() => loadEntries());
 
+  const [remoteOnline, setRemoteOnline] = useState(false);
+  const siteIdRef = useRef(null);
+
+  const sbRef = useRef(null);
+  const channelRef = useRef(null);
+
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showAllSent, setShowAllSent] = useState(false);
 
-  // ✅ Toast (with tone)
+  // Toast
   const [toastKey, setToastKey] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
-  const [toastTone, setToastTone] = useState("info"); // success|warning|info
+  const [toastTone, setToastTone] = useState("info");
   const toastClearRef = useRef(null);
 
   function showToast(msg, tone = "info") {
@@ -65,32 +185,188 @@ export default function TopRopesPage() {
   });
 
   // Merge selection (SENT only)
-  const [mergeIds, setMergeIds] = useState([]); // up to 2 ids
+  const [mergeIds, setMergeIds] = useState([]);
 
   // Archive modal state
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveEntry, setArchiveEntry] = useState(null);
 
-  // Finish confirm modal state
+  // Finish confirm
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [finishEntry, setFinishEntry] = useState(null);
+  const [finishSaving, setFinishSaving] = useState(false);
 
-  useEffect(() => {
-    const refresh = () => {
-      setSettings(loadSettings());
-      setEntries(loadEntries());
+  function refreshFromLocal() {
+    setSettings(loadSettings());
+    setEntries(loadEntries());
+  }
+
+  async function refreshFromServer() {
+    try {
+      const json = await stateGet();
+      const s = mapDbSettings(json.settings);
+      const list = (Array.isArray(json.entries) ? json.entries : [])
+        .map(mapDbEntry)
+        .filter(Boolean);
+
+      if (s) {
+        setSettings(s);
+        siteIdRef.current = s.siteId || siteIdRef.current;
+      }
+      setEntries(list);
+      setRemoteOnline(true);
+    } catch {
+      setRemoteOnline(false);
+    }
+  }
+
+  // ✅ DB-backed flow pause setter
+  async function setFlowPauseRemote({ paused, reason }) {
+    const patch = {
+      flow_paused: Boolean(paused),
+      flow_pause_reason: paused ? String(reason || "").slice(0, 200) : "",
+      flow_paused_at: paused ? new Date().toISOString() : null,
     };
 
-    refresh();
-    const unsub = subscribeToRopesStorage(refresh);
+    // optimistic local
+    setSettings((s) => ({
+      ...s,
+      flowPaused: patch.flow_paused,
+      flowPauseReason: patch.flow_pause_reason,
+      flowPausedAt: patch.flow_paused_at,
+    }));
 
-    const onFocus = () => refresh();
+    try {
+      await statePut({ settingsPatch: patch });
+      setRemoteOnline(true);
+      showToast(patch.flow_paused ? "Flow paused" : "Flow resumed", "success");
+    } catch (e) {
+      setRemoteOnline(false);
+      showToast(String(e?.message || "Couldn’t sync flow pause"), "warning");
+    }
+  }
+
+  function pauseFlow() {
+    const reason = prompt("Pause reason? (optional)") || "";
+    setFlowPauseRemote({ paused: true, reason });
+  }
+
+  function resumeFlow() {
+    setFlowPauseRemote({ paused: false, reason: "" });
+  }
+
+  // Mount: local -> server; focus/visibility refresh
+  useEffect(() => {
+    refreshFromLocal();
+    refreshFromServer();
+
+    const onFocus = () => refreshFromServer();
+    const onVis = () => {
+      if (document.visibilityState === "visible") refreshFromServer();
+    };
     window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      unsub?.();
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // fallback refresh
+  useEffect(() => {
+    const t = setInterval(() => refreshFromServer(), FALLBACK_REFRESH_MS);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Realtime subscription
+  useEffect(() => {
+    const sb = sbRef.current || makeSupabaseBrowser();
+    sbRef.current = sb;
+    if (!sb) return;
+
+    let cancelled = false;
+
+    async function ensureSiteIdThenSubscribe() {
+      if (!siteIdRef.current) {
+        await refreshFromServer();
+      }
+      const siteId = siteIdRef.current;
+      if (!siteId || cancelled) return;
+
+      try {
+        if (channelRef.current) sb.removeChannel(channelRef.current);
+      } catch {}
+      channelRef.current = null;
+
+      const ch = sb
+        .channel(`rt-top:${siteId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "ropes_entries_live",
+            filter: `site_id=eq.${siteId}`,
+          },
+          (payload) => {
+            const ev = payload?.eventType;
+            if (!ev) return;
+
+            setEntries((prev) => {
+              const list = Array.isArray(prev) ? prev : [];
+
+              if (ev === "DELETE") {
+                const id = payload?.old?.id || payload?.old?.live_entry_id;
+                if (!id) return list;
+                return list.filter((e) => e.id !== id);
+              }
+
+              const row = payload?.new;
+              const mapped = mapDbEntry(row);
+              if (!mapped) return list;
+
+              return upsertById(list, mapped);
+            });
+
+            setRemoteOnline(true);
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "ropes_settings",
+            filter: `site_id=eq.${siteId}`,
+          },
+          (payload) => {
+            const mapped = mapDbSettings(payload?.new);
+            if (!mapped) return;
+            setSettings(mapped);
+            siteIdRef.current = mapped.siteId || siteIdRef.current;
+            setRemoteOnline(true);
+          },
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") setRemoteOnline(true);
+        });
+
+      channelRef.current = ch;
+    }
+
+    ensureSiteIdThenSubscribe();
+
+    return () => {
+      cancelled = true;
+      try {
+        if (channelRef.current) sb.removeChannel(channelRef.current);
+      } catch {}
+      channelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // tick for countdowns
@@ -113,32 +389,44 @@ export default function TopRopesPage() {
     [sentUp],
   );
 
-  function setLocalEntries(nextEntries) {
-    setEntries(nextEntries);
-  }
-
   function tagOptionsForEntry(entry) {
     const current = entry?.assignedTag ? [entry.assignedTag] : [];
     return Array.from(new Set([...current, ...availableTagsGlobal]));
   }
 
+  async function patchEntryRemote(entryId, uiPatch) {
+    // optimistic local
+    setEntries((prev) =>
+      prev.map((e) => (e.id === entryId ? { ...e, ...uiPatch } : e)),
+    );
+
+    try {
+      await statePut({
+        op: "PATCH_ENTRY",
+        payload: { id: entryId, patch: toDbPatchFromUi(uiPatch) },
+      });
+      setRemoteOnline(true);
+    } catch {
+      setRemoteOnline(false);
+      showToast("Saved locally — couldn’t sync", "warning");
+    }
+  }
+
   function handleAssignTag(entryId, tag) {
-    const nextEntries = patchEntry(entryId, { assignedTag: tag || null });
-    setLocalEntries(nextEntries);
-    // optional: showToast("Tag saved ✅", "success");
+    patchEntryRemote(entryId, { assignedTag: tag || null });
   }
 
   function handleStartCourse(entry) {
     if (!entry) return;
     if (closed) return;
+    if (settings?.flowPaused) return; // ✅ respect flow pause
     if (!entry.assignedTag) return;
 
     const TOP_MIN = Number(settings?.topDurationMin ?? 35);
-
     const linesNeeded = Math.max(1, Number(entry.partySize || 1));
     const nowISO = new Date().toISOString();
 
-    const nextEntries = patchEntry(entry.id, {
+    patchEntryRemote(entry.id, {
       coursePhase: "ON_COURSE",
       linesUsed: Number.isFinite(Number(entry.linesUsed))
         ? entry.linesUsed
@@ -147,13 +435,18 @@ export default function TopRopesPage() {
       startTime: nowISO,
       endTime: isoPlusMinutes(TOP_MIN),
     });
-
-    setLocalEntries(nextEntries);
   }
 
   function handleExtend(entryId) {
-    const nextEntries = extendEntryByMinutes(entryId, 5);
-    setLocalEntries(nextEntries);
+    const entry = entries.find((e) => e.id === entryId);
+    if (!entry) return;
+
+    const currentEnd = entry.endTime ? new Date(entry.endTime) : null;
+    const base =
+      currentEnd && !isNaN(currentEnd.getTime()) ? currentEnd : new Date();
+    const nextEnd = new Date(base.getTime() + 5 * 60 * 1000).toISOString();
+
+    patchEntryRemote(entryId, { endTime: nextEnd });
   }
 
   function openFinishConfirm(entry) {
@@ -166,12 +459,34 @@ export default function TopRopesPage() {
     setFinishEntry(null);
   }
 
-  function confirmFinish() {
+  async function confirmFinish() {
     if (!finishEntry?.id) return;
-    const nextEntries = markEntryDone(finishEntry.id);
-    setLocalEntries(nextEntries);
-    closeFinishConfirm();
-    // optional: showToast("Finished ✅", "success");
+    if (finishSaving) return;
+
+    setFinishSaving(true);
+
+    // optimistic local (remove)
+    setEntries((prev) => prev.filter((e) => e.id !== finishEntry.id));
+
+    try {
+      await statePut({
+        op: "MOVE_TO_HISTORY",
+        payload: {
+          id: finishEntry.id,
+          status: "DONE",
+          finish_reason: "Finished (top)",
+        },
+      });
+
+      setRemoteOnline(true);
+      refreshFromServer();
+    } catch {
+      setRemoteOnline(false);
+      showToast("Finished locally — couldn’t sync", "warning");
+    } finally {
+      setFinishSaving(false);
+      closeFinishConfirm();
+    }
   }
 
   function handleFinish(entry) {
@@ -195,7 +510,7 @@ export default function TopRopesPage() {
     setEditDraft({ name: "", partySize: "", phone: "", notes: "" });
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editingId) return;
 
     const name = String(editDraft.name || "")
@@ -212,8 +527,7 @@ export default function TopRopesPage() {
       .trim()
       .slice(0, 120);
 
-    // ✅ keep linesUsed in sync so QuickQuote / estimates reflect the change
-    const nextEntries = patchEntry(editingId, {
+    await patchEntryRemote(editingId, {
       name,
       partySize: partySizeNum,
       linesUsed: partySizeNum,
@@ -221,8 +535,7 @@ export default function TopRopesPage() {
       notes,
     });
 
-    setLocalEntries(nextEntries);
-    showToast("Saved ✅", "success");
+    showToast("Saved", "success");
     closeEdit();
   }
 
@@ -247,7 +560,7 @@ export default function TopRopesPage() {
     setMergeIds([]);
   }
 
-  function doMergeSelected() {
+  async function doMergeSelected() {
     if (mergeIds.length !== 2) return;
 
     const primaryId = mergeIds[0];
@@ -263,16 +576,62 @@ export default function TopRopesPage() {
     }
 
     const ok = confirm(
-      `Merge these groups?\n\n1) ${a.name} (${a.partySize || 1})\n2) ${b.name} (${b.partySize || 1})\n\nThis will combine them into one group.`,
+      `Merge these groups?\n\n1) ${a.name} (${a.partySize || 1})\n2) ${b.name} (${
+        b.partySize || 1
+      })\n\nThis will combine them into one group.`,
     );
     if (!ok) return;
 
-    const nextEntries = mergeEntries(primaryId, secondaryId, {
-      mergedBy: "top",
-    });
-    setLocalEntries(nextEntries);
-    clearMerge();
-    // optional: showToast("Merged ✅", "success");
+    const mergedParty =
+      Math.max(1, Number(a.partySize || 1)) +
+      Math.max(1, Number(b.partySize || 1));
+    const mergedNotes = [
+      String(a.notes || "").trim(),
+      String(b.notes || "").trim(),
+      `Merged: ${a.name} + ${b.name}`,
+    ]
+      .filter(Boolean)
+      .join(" • ")
+      .slice(0, 200);
+
+    // optimistic local
+    setEntries((prev) =>
+      prev
+        .filter((e) => e.id !== secondaryId)
+        .map((e) =>
+          e.id !== primaryId
+            ? e
+            : {
+                ...e,
+                partySize: mergedParty,
+                linesUsed: mergedParty,
+                notes: mergedNotes,
+              },
+        ),
+    );
+
+    try {
+      await Promise.all([
+        statePut({
+          op: "PATCH_ENTRY",
+          payload: {
+            id: primaryId,
+            patch: {
+              party_size: mergedParty,
+              lines_used: mergedParty,
+              notes: mergedNotes,
+            },
+          },
+        }),
+        statePut({ op: "DELETE_ENTRY", payload: { id: secondaryId } }),
+      ]);
+
+      setRemoteOnline(true);
+      clearMerge();
+    } catch {
+      setRemoteOnline(false);
+      showToast("Merged locally — couldn’t sync", "warning");
+    }
   }
 
   // ===== Archive Modal =====
@@ -286,8 +645,9 @@ export default function TopRopesPage() {
     setArchiveEntry(null);
   }
 
-  function handleArchiveSubmit({ reason, note, mode }) {
-    if (!archiveEntry) return;
+  // ✅ UPDATED: writes to ropes_flag_archive first
+  async function handleArchiveSubmit({ reason, note, mode }) {
+    if (!archiveEntry?.id) return;
 
     const r = String(reason || "").trim();
     const n = String(note || "").trim();
@@ -299,26 +659,67 @@ export default function TopRopesPage() {
     const combined = n ? `${r} • Note: ${n}` : r;
     const removeFromActive = String(mode) !== "KEEP";
 
-    archiveFlaggedEntry({
-      entryId: archiveEntry.id,
-      archivedBy: "top",
-      reason: combined,
-      removeFromActive,
-    });
+    try {
+      // 1) Insert into DB archive table
+      await archiveFlaggedEntry({
+        entryId: archiveEntry.id,
+        archivedBy: "top",
+        reason: combined,
+        removeFromActive: false, // we handle local remove below
+        cleanupGuestNotes: true,
+      });
 
-    if (removeFromActive) {
-      setEntries((prev) => prev.filter((e) => e.id !== archiveEntry.id));
+      // 2) Existing behavior: move to history OR mark notes
+      if (removeFromActive) {
+        setEntries((prev) => prev.filter((e) => e.id !== archiveEntry.id));
+
+        await statePut({
+          op: "MOVE_TO_HISTORY",
+          payload: {
+            id: archiveEntry.id,
+            status: "ARCHIVED",
+            finish_reason: combined,
+          },
+        });
+      } else {
+        setEntries((prev) =>
+          prev.map((e) =>
+            e.id !== archiveEntry.id
+              ? e
+              : {
+                  ...e,
+                  notes: String(e.notes || "")
+                    ? `${String(e.notes).slice(
+                        0,
+                        180,
+                      )} • FLAG: ${combined}`.slice(0, 220)
+                    : `FLAG: ${combined}`.slice(0, 220),
+                },
+          ),
+        );
+
+        await statePut({
+          op: "PATCH_ENTRY",
+          payload: {
+            id: archiveEntry.id,
+            patch: { notes: `FLAG: ${combined}` },
+          },
+        });
+      }
+
+      setRemoteOnline(true);
+      setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
+      closeArchive();
+      showToast("Archived", "success");
+    } catch (e) {
+      setRemoteOnline(false);
+      showToast(String(e?.message || "Archive failed"), "warning");
+      // keep modal open so they can retry
     }
-
-    setMergeIds((prev) => prev.filter((id) => id !== archiveEntry.id));
-    closeArchive();
-
-    // optional: showToast("Archived ✅", "success");
   }
 
   return (
     <main className="page" style={{ padding: "14px 14px 28px" }}>
-      {/* ✅ Toast (top-right slide) */}
       <AlertToast
         toastKey={toastKey}
         message={toastMsg}
@@ -335,6 +736,9 @@ export default function TopRopesPage() {
         courseCount={courseCount}
         waitingCount={waitingCount}
         settings={settings}
+        remoteOnline={remoteOnline}
+        onPauseFlow={pauseFlow}
+        onResumeFlow={resumeFlow}
       />
 
       <div className="topBody">
@@ -385,13 +789,15 @@ export default function TopRopesPage() {
         title="Finish group?"
         message={
           finishEntry
-            ? `Finish "${String(finishEntry.name || "this group")}"?\n\nThis will mark them DONE and free up their lines.`
+            ? `Finish "${String(
+                finishEntry.name || "this group",
+              )}"?\n\nThis will mark them DONE and move them to history.`
             : ""
         }
-        confirmText="Finish"
+        confirmText={finishSaving ? "Saving..." : "Finish"} // ✅ dynamic text
         cancelText="Cancel"
         tone="danger"
-        onClose={closeFinishConfirm}
+        onClose={finishSaving ? undefined : closeFinishConfirm} // ✅ prevent close
         onConfirm={confirmFinish}
       />
 

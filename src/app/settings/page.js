@@ -1,38 +1,63 @@
+// src/app/settings/page.jsx
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   loadSettings,
   saveSettings,
   MAX_SLING_LINES,
-  clearStaffAuth,
 } from "@/app/lib/ropesStore";
 
 import AlertToast from "@/app/components/ropes/AlertToast";
 import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 
-const SESSION_KEY = "settings_authed_v1";
+async function stateGet() {
+  const res = await fetch("/api/state", {
+    method: "GET",
+    credentials: "include",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || "Failed to load state.");
+  return json;
+}
+
+async function statePut(body) {
+  const res = await fetch("/api/state", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || "Failed to save settings.");
+  return json;
+}
+
+function mapDbSettings(db) {
+  if (!db || typeof db !== "object") return null;
+  return {
+    siteId: db.site_id ?? null,
+    totalLines: Number(db.total_lines ?? 15),
+    durationMin: Number(db.duration_min ?? 45),
+    topDurationMin: Number(db.top_duration_min ?? 35),
+    stagingDurationMin: Number(db.staging_duration_min ?? 45),
+    paused: Boolean(db.paused ?? false),
+    venueName: String(db.venue_name ?? "Ropes Course Waitlist"),
+    clientTheme: String(db.client_theme ?? "auto"),
+    flowPaused: Boolean(db.flow_paused ?? false),
+    flowPauseReason: String(db.flow_pause_reason ?? ""),
+    flowPausedAt: db.flow_paused_at ?? null,
+  };
+}
 
 export default function SettingsPage() {
-  const REQUIRED_PASS = process.env.NEXT_PUBLIC_SETTINGS_PASS;
-
-  const [authed, setAuthed] = useState(() => {
-    if (!REQUIRED_PASS) return true;
-    try {
-      return sessionStorage.getItem(SESSION_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  const [passInput, setPassInput] = useState("");
-  const [passError, setPassError] = useState("");
-
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
 
-  // ✅ Toast (with tone)
+  // Toast (with tone)
   const [toastKey, setToastKey] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [toastTone, setToastTone] = useState("info");
@@ -47,31 +72,26 @@ export default function SettingsPage() {
     toastClearRef.current = setTimeout(() => setToastMsg(""), 1800);
   }
 
-  // ✅ Reset confirm modal
+  // Reset confirm modal
   const [resetOpen, setResetOpen] = useState(false);
 
-  function submitPassword(e) {
-    e.preventDefault();
-
-    if (!REQUIRED_PASS) {
-      alert(
-        "Settings password is not configured. Add NEXT_PUBLIC_SETTINGS_PASS in .env.local",
-      );
-      return;
-    }
-
-    if (passInput === REQUIRED_PASS) {
+  // Load from DB on mount (and keep local cache aligned)
+  useEffect(() => {
+    (async () => {
       try {
-        sessionStorage.setItem(SESSION_KEY, "true");
-      } catch {}
-      setAuthed(true);
-      setPassError("");
-      setPassInput("");
-    } else {
-      setPassError("Incorrect password");
-      setPassInput("");
-    }
-  }
+        const json = await stateGet();
+        const s = mapDbSettings(json.settings);
+        if (s) {
+          setSettings(s);
+          try {
+            saveSettings(s);
+          } catch {}
+        }
+      } catch {
+        // ignore; local fallback remains
+      }
+    })();
+  }, []);
 
   const clamped = useMemo(() => {
     const totalLines = Math.min(
@@ -101,10 +121,6 @@ export default function SettingsPage() {
         ? themeRaw
         : "auto";
 
-    const staffPin = String(settings.staffPin ?? "")
-      .trim()
-      .slice(0, 12);
-
     return {
       totalLines,
       durationMin,
@@ -112,7 +128,6 @@ export default function SettingsPage() {
       paused,
       venueName,
       clientTheme,
-      staffPin,
     };
   }, [
     settings.totalLines,
@@ -121,56 +136,7 @@ export default function SettingsPage() {
     settings.paused,
     settings.venueName,
     settings.clientTheme,
-    settings.staffPin,
   ]);
-
-  if (!authed) {
-    return (
-      <main className="container" style={{ maxWidth: 520 }}>
-        <div className="card spacer-md" style={{ marginTop: 24 }}>
-          <div className="topbar" style={{ marginBottom: 12 }}>
-            <div>
-              <h1 className="title">Settings</h1>
-              <p className="muted">
-                This page is locked. Enter the staff password to continue.
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={submitPassword} className="guest-form spacer-sm">
-            <label className="field">
-              <span className="field-label">Settings password</span>
-              <input
-                className="input"
-                type="password"
-                value={passInput}
-                onChange={(e) => setPassInput(e.target.value)}
-                placeholder="Enter password"
-                autoFocus
-              />
-              {passError ? (
-                <p
-                  className="muted helper"
-                  style={{ color: "var(--danger, #e44)" }}
-                >
-                  {passError}
-                </p>
-              ) : null}
-            </label>
-
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <Link className="button" href="/">
-                Back
-              </Link>
-              <button className="button button-primary" type="submit">
-                Unlock
-              </button>
-            </div>
-          </form>
-        </div>
-      </main>
-    );
-  }
 
   function updateTotalLines(value) {
     setSettings((s) => ({
@@ -211,25 +177,37 @@ export default function SettingsPage() {
     setSavedMsg("");
   }
 
-  function updateStaffPin(value) {
-    const safe = String(value ?? "")
-      .replace(/[^\w-]/g, "")
-      .slice(0, 12);
-    setSettings((s) => ({ ...s, staffPin: safe }));
-    setSavedMsg("");
+  async function onSave() {
+    // optimistic local
+    setSettings((s) => ({ ...s, ...clamped }));
+    try {
+      saveSettings(clamped);
+    } catch {}
+
+    setSavedMsg("Saving…");
+    try {
+      await statePut({
+        settingsPatch: {
+          total_lines: clamped.totalLines,
+          duration_min: clamped.durationMin,
+          top_duration_min: clamped.topDurationMin,
+          paused: clamped.paused,
+          venue_name: clamped.venueName,
+          client_theme: clamped.clientTheme,
+        },
+      });
+
+      setSavedMsg("Saved ✅");
+      showToast("Saved ✅", "success");
+    } catch (e) {
+      setSavedMsg("Saved locally (sync failed)");
+      showToast(String(e?.message || "Couldn’t sync to server"), "warning");
+    } finally {
+      setTimeout(() => setSavedMsg(""), 1500);
+    }
   }
 
-  function onSave() {
-    saveSettings(clamped);
-
-    setSavedMsg("Saved ✅");
-    setTimeout(() => setSavedMsg(""), 1500);
-
-    // ✅ GREEN toast
-    showToast("Saved ✅", "success");
-  }
-
-  function doResetNow() {
+  async function doResetNow() {
     const defaults = {
       totalLines: MAX_SLING_LINES,
       durationMin: 45,
@@ -237,26 +215,34 @@ export default function SettingsPage() {
       paused: false,
       venueName: "Ropes Course Waitlist",
       clientTheme: "auto",
-      staffPin: "",
     };
 
-    setSettings(defaults);
-    saveSettings(defaults);
-    clearStaffAuth();
+    setSettings((s) => ({ ...s, ...defaults }));
+    try {
+      saveSettings(defaults);
+    } catch {}
 
-    setSavedMsg("Reset ✅");
-    setTimeout(() => setSavedMsg(""), 1500);
+    setSavedMsg("Resetting…");
+    try {
+      await statePut({
+        settingsPatch: {
+          total_lines: defaults.totalLines,
+          duration_min: defaults.durationMin,
+          top_duration_min: defaults.topDurationMin,
+          paused: defaults.paused,
+          venue_name: defaults.venueName,
+          client_theme: defaults.clientTheme,
+        },
+      });
 
-    showToast("Reset ✅", "warning");
-  }
-
-  function logoutStaff() {
-    clearStaffAuth();
-
-    setSavedMsg("Staff logged out ✅");
-    setTimeout(() => setSavedMsg(""), 1500);
-
-    showToast("Staff logged out ✅", "info");
+      setSavedMsg("Reset ✅");
+      showToast("Reset ✅", "warning");
+    } catch (e) {
+      setSavedMsg("Reset locally (sync failed)");
+      showToast(String(e?.message || "Couldn’t sync to server"), "warning");
+    } finally {
+      setTimeout(() => setSavedMsg(""), 1500);
+    }
   }
 
   return (
@@ -283,17 +269,12 @@ export default function SettingsPage() {
             Back
           </Link>
 
-          {/* ✅ now confirms */}
           <button
             className="button"
             onClick={() => setResetOpen(true)}
             type="button"
           >
             Reset
-          </button>
-
-          <button className="button" onClick={logoutStaff} type="button">
-            Log out staff
           </button>
 
           <button
@@ -375,32 +356,6 @@ export default function SettingsPage() {
             </select>
             <p className="muted helper">
               This only affects the public /client screen (not the staff view).
-            </p>
-          </label>
-        </div>
-      </div>
-
-      <div className="card spacer-md">
-        <h2 className="section-title">Staff access</h2>
-
-        <div className="guest-form spacer-sm">
-          <label className="field">
-            <span className="field-label">
-              Staff PIN (optional){" "}
-              <strong> ONLY FIRST 4 CHARACTERS WILL SAVE</strong>
-            </span>
-            <input
-              className="input"
-              type="number"
-              maxLength={4}
-              value={settings.staffPin ?? ""}
-              onChange={(e) => updateStaffPin(e.target.value)}
-              placeholder="Set a PIN to lock staff view"
-              autoComplete="off"
-            />
-            <p className="muted helper">
-              If set, the staff page (/) will require this PIN. Leave blank to
-              disable the lock.
             </p>
           </label>
         </div>
@@ -491,10 +446,7 @@ export default function SettingsPage() {
                     : "Light"}
               </strong>
             </div>
-            <div>
-              <span className="muted">Staff PIN:</span>{" "}
-              <strong>{clamped.staffPin ? "Enabled" : "Off"}</strong>
-            </div>
+
             {savedMsg ? (
               <div>
                 <strong>{savedMsg}</strong>
@@ -509,11 +461,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ✅ Confirm reset */}
       <ConfirmModal
         open={resetOpen}
         title="Reset settings?"
-        message="This will restore defaults and log out staff."
+        message="This will restore defaults."
         confirmText="Reset"
         cancelText="Cancel"
         tone="danger"
