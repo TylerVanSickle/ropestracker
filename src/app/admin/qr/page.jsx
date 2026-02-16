@@ -177,7 +177,7 @@ export default function AdminQrPage() {
       `}</style>
 
       <div className="toolbar">
-        <h1 className="title">Print QR — /client</h1>
+        <h1 className="title">Print QR -/client</h1>
         <div className="actions">
           <button className="btn" onClick={onPrint} disabled={!clientUrl}>
             Print
@@ -189,8 +189,7 @@ export default function AdminQrPage() {
       </div>
 
       <p className="hint">
-        This prints as a simple laminated card: one line of text + big QR + tiny
-        URL (optional to cut off).
+        This can print a simple QR code.
       </p>
 
       {!clientUrl ? (

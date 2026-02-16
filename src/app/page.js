@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   loadEntries,
   loadSettings,
-  saveSettings, // ✅ ADD THIS
+  saveSettings, //  ADD THIS
   saveEntries,
   uid,
   subscribeToRopesStorage,
@@ -74,7 +74,7 @@ function makeSupabaseBrowser() {
 }
 
 function makeClientUuid() {
-  // ✅ MUST be a UUID because DB column is uuid
+  //  MUST be a UUID because DB column is uuid
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
@@ -82,7 +82,7 @@ function makeClientUuid() {
   return uid();
 }
 
-// ✅ Simple collapsible — NO effects, NO persistence (fixes your lint rule)
+//  Simple collapsible — NO effects, NO persistence (fixes your lint rule)
 function CollapsibleCard({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   return (
@@ -221,7 +221,7 @@ async function statePut(body) {
   const res = await fetch("/api/state", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    credentials: "include", // ✅ ensure cookies are sent (staff wall)
+    credentials: "include", //  ensure cookies are sent (staff wall)
     body: JSON.stringify(body),
   });
 
@@ -700,7 +700,7 @@ export default function Home() {
   async function addGuest(e) {
     e.preventDefault();
 
-    // ✅ guard: prevents double submit / double click
+    //  guard: prevents double submit / double click
     if (createLockRef.current) return;
     createLockRef.current = true;
 
@@ -714,7 +714,7 @@ export default function Home() {
       const maxLines = clampInt(settings.totalLines, 1, 15);
       const partySize = clampInt(newGuest.partySize || 1, 1, maxLines);
 
-      // ✅ IMPORTANT: must be UUID if we send it to DB
+      //  IMPORTANT: must be UUID if we send it to DB
       const localId = makeClientUuid();
 
       const createdAtISO = new Date().toISOString();
@@ -746,7 +746,7 @@ export default function Home() {
         await statePut({
           op: "CREATE_ENTRY",
           payload: {
-            id: localId, // ✅ uuid
+            id: localId, //  uuid
             name,
             party_size: partySize,
             phone: phone || null,
@@ -765,7 +765,7 @@ export default function Home() {
         fireToast(String(err?.message || "Couldn’t sync to server"), "warning");
       }
     } finally {
-      // ✅ always release lock (even if validation returns early)
+      //  always release lock (even if validation returns early)
       createLockRef.current = false;
     }
   }
@@ -854,7 +854,7 @@ export default function Home() {
       );
     });
 
-    // ✅ move to history so it disappears from live table too
+    //  move to history so it disappears from live table too
     try {
       await statePut({
         op: "MOVE_TO_HISTORY",
