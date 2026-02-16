@@ -71,7 +71,7 @@ export default function Topbar({
           </button>
 
           {/*   popup button */}
-          <button
+          {/* <button
             className="button"
             type="button"
             onClick={onOpenReservations}
@@ -95,7 +95,7 @@ export default function Topbar({
             >
               {reservationsCount}
             </span>
-          </button>
+          </button> */}
 
           <button
             className="button"

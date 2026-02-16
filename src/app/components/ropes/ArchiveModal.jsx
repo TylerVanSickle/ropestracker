@@ -9,9 +9,8 @@ export default function ArchiveModal({
   initialNote = "",
   initialMode = "REMOVE", // "REMOVE" | "KEEP"
   onClose,
-  onSubmit,
+  onSubmit, // can be async now
 }) {
-  // Unique "session" per open + entry id
   const sessionKey = useMemo(() => {
     if (!open || !entry?.id) return "";
     return `${entry.id}:open`;
@@ -24,22 +23,26 @@ export default function ArchiveModal({
     mode: "REMOVE",
   }));
 
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
   // Reset drafts when a new session begins (safe guard during render)
   if (open && entry?.id && drafts.sessionKey !== sessionKey) {
-    // Note: we set defaults based on props for this open-session
     setDrafts({
       sessionKey,
       reason: String(initialReason || ""),
       note: String(initialNote || ""),
       mode: initialMode === "KEEP" ? "KEEP" : "REMOVE",
     });
+    setErr("");
+    setSaving(false);
   }
 
   if (!open || !entry) return null;
 
   const party = Math.max(1, Number(entry.partySize || 1));
 
-  function submit() {
+  async function submit() {
     const r = String(drafts.reason || "").trim();
     const n = String(drafts.note || "").trim();
 
@@ -48,17 +51,26 @@ export default function ArchiveModal({
       return;
     }
 
-    onSubmit?.({ reason: r, note: n, mode: drafts.mode });
+    setErr("");
+    setSaving(true);
 
-    // Clear immediately so if modal stays mounted or reopens fast, it’s clean
-    setDrafts({
-      sessionKey: "",
-      reason: "",
-      note: "",
-      mode: "REMOVE",
-    });
+    try {
+      // IMPORTANT: await the caller (which now does the DB write)
+      await onSubmit?.({ reason: r, note: n, mode: drafts.mode });
 
-    onClose?.();
+      // Clear immediately so if modal stays mounted or reopens fast, it’s clean
+      setDrafts({
+        sessionKey: "",
+        reason: "",
+        note: "",
+        mode: "REMOVE",
+      });
+
+      onClose?.();
+    } catch (e) {
+      setErr(e?.message || "Failed to archive. Please try again.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -75,7 +87,10 @@ export default function ArchiveModal({
         padding: 14,
         zIndex: 10000,
       }}
-      onClick={() => onClose?.()}
+      onClick={() => {
+        if (saving) return;
+        onClose?.();
+      }}
     >
       <div
         className="card"
@@ -89,7 +104,12 @@ export default function ArchiveModal({
           <h2 className="section-title" style={{ margin: 0 }}>
             Flag & Archive
           </h2>
-          <button className="button" type="button" onClick={() => onClose?.()}>
+          <button
+            className="button"
+            type="button"
+            disabled={saving}
+            onClick={() => onClose?.()}
+          >
             Close
           </button>
         </div>
@@ -106,12 +126,29 @@ export default function ArchiveModal({
           </div>
         </div>
 
+        {err ? (
+          <div
+            className="item"
+            style={{
+              padding: 12,
+              marginTop: 12,
+              borderLeft: "6px solid #e65a4f",
+            }}
+          >
+            <div style={{ fontWeight: 800 }}>Couldn’t archive</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              {err}
+            </div>
+          </div>
+        ) : null}
+
         <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
           <label className="field">
             <span className="field-label">Reason (required)</span>
             <input
               className="input"
               value={drafts.reason}
+              disabled={saving}
               onChange={(e) =>
                 setDrafts((d) => ({ ...d, reason: e.target.value }))
               }
@@ -125,6 +162,7 @@ export default function ArchiveModal({
             <input
               className="input"
               value={drafts.note}
+              disabled={saving}
               onChange={(e) =>
                 setDrafts((d) => ({ ...d, note: e.target.value }))
               }
@@ -138,6 +176,7 @@ export default function ArchiveModal({
             <select
               className="input"
               value={drafts.mode}
+              disabled={saving}
               onChange={(e) =>
                 setDrafts((d) => ({ ...d, mode: e.target.value }))
               }
@@ -166,6 +205,7 @@ export default function ArchiveModal({
             <button
               className="button"
               type="button"
+              disabled={saving}
               onClick={() => onClose?.()}
             >
               Cancel
@@ -173,9 +213,10 @@ export default function ArchiveModal({
             <button
               className="button button-primary"
               type="button"
+              disabled={saving}
               onClick={submit}
             >
-              Archive
+              {saving ? "Saving…" : "Archive"}
             </button>
           </div>
         </div>

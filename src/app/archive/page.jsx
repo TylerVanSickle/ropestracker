@@ -1,23 +1,46 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  loadFlagArchive,
-  subscribeToRopesStorage,
-  formatTime,
-  deleteArchiveRecord,
-} from "@/app/lib/ropesStore";
+import { formatTime } from "@/app/lib/ropesStore";
 
 export default function ArchivePage() {
-  const [tick, setTick] = useState(0);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/archive", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to load archive");
+      setRecords(Array.isArray(data.records) ? data.records : []);
+    } catch (e) {
+      setErr(e?.message || "Failed to load archive");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onDelete(id) {
+    if (!confirm("Delete this archive record?")) return;
+    try {
+      const res = await fetch(`/api/archive?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Delete failed");
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      alert(e?.message || "Delete failed");
+    }
+  }
 
   useEffect(() => {
-    const unsub = subscribeToRopesStorage(() => setTick((x) => x + 1));
-    return () => unsub?.();
+    load();
   }, []);
-
-  const records = loadFlagArchive();
 
   return (
     <main className="container">
@@ -48,7 +71,26 @@ export default function ArchivePage() {
       </div>
 
       <section className="card spacer-md">
-        {records.length === 0 ? (
+        {loading ? (
+          <div className="item" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 800 }}>Loading…</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Pulling records from database.
+            </div>
+          </div>
+        ) : err ? (
+          <div className="item" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 800 }}>Couldn’t load archive</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              {err}
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="button" onClick={load} type="button">
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : records.length === 0 ? (
           <div className="item" style={{ padding: 14 }}>
             <div style={{ fontWeight: 800 }}>No archived groups yet</div>
             <div className="muted" style={{ marginTop: 6 }}>
@@ -58,7 +100,9 @@ export default function ArchivePage() {
         ) : (
           <div className="list spacer-sm">
             {records.map((r) => {
-              const e = r.entrySnapshot || {};
+              const e = r.entry_snapshot || {};
+              const guestNotes = r.guest_notes || [];
+
               return (
                 <div key={r.id} className="item" style={{ padding: 14 }}>
                   <div className="item-title" style={{ fontSize: 18 }}>
@@ -72,8 +116,8 @@ export default function ArchivePage() {
                   </div>
 
                   <div className="muted item-sub" style={{ marginTop: 4 }}>
-                    Archived: {formatTime(r.archivedAt)} • By:{" "}
-                    <strong>{r.archivedBy}</strong>
+                    Archived: {formatTime(r.archived_at)} • By:{" "}
+                    <strong>{r.archived_by}</strong>
                   </div>
 
                   {e.phone ? (
@@ -100,15 +144,15 @@ export default function ArchivePage() {
                     </div>
                   ) : null}
 
-                  {Array.isArray(r.guestNotes) && r.guestNotes.length ? (
+                  {Array.isArray(guestNotes) && guestNotes.length ? (
                     <div style={{ marginTop: 12 }}>
                       <div className="muted" style={{ fontSize: 12 }}>
                         Staff Notes
                       </div>
                       <div style={{ marginTop: 6 }}>
-                        {r.guestNotes.slice(0, 8).map((n) => (
+                        {guestNotes.slice(0, 8).map((n) => (
                           <div
-                            key={n.id}
+                            key={n.id || `${n.createdAt}-${n.text}`}
                             className="item"
                             style={{ padding: 10, marginTop: 8 }}
                           >
@@ -140,11 +184,7 @@ export default function ArchivePage() {
                     <button
                       className="button"
                       type="button"
-                      onClick={() => {
-                        if (!confirm("Delete this archive record?")) return;
-                        deleteArchiveRecord(r.id);
-                        setTick((x) => x + 1);
-                      }}
+                      onClick={() => onDelete(r.id)}
                     >
                       Delete Record
                     </button>
