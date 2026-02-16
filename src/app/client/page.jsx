@@ -125,6 +125,14 @@ function summarizeSupabaseError(e) {
   return `${msg}${code}${details}`.slice(0, 220);
 }
 
+function upsertById(list, item) {
+  const idx = list.findIndex((x) => x.id === item.id);
+  if (idx < 0) return [...list, item];
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...item };
+  return next;
+}
+
 export default function ClientPage() {
   const [settings, setSettings] = useState({
     totalLines: 15,
@@ -179,16 +187,21 @@ export default function ClientPage() {
     try {
       const siteId = await loadSiteId(sb);
 
+      // Perf win: select only what we use
       const [{ data: s, error: se }, { data: rows, error: ee }] =
         await Promise.all([
           sb
             .from("ropes_settings")
-            .select("*")
+            .select(
+              "site_id,total_lines,duration_min,top_duration_min,staging_duration_min,paused,venue_name,client_theme,flow_paused,flow_pause_reason",
+            )
             .eq("site_id", siteId)
             .maybeSingle(),
           sb
             .from("ropes_entries_live")
-            .select("*")
+            .select(
+              "id,name,party_size,phone,notes,status,course_phase,queue_order,assigned_tag,lines_used,created_at,end_time,site_id",
+            )
             .eq("site_id", siteId)
             .order("queue_order", { ascending: true }),
         ]);
@@ -233,9 +246,7 @@ export default function ClientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Realtime subscribe:
-  // Instead of trying to patch local state from event payloads (which can drift),
-  // any change triggers a debounced refreshPublic() to pull DB truth.
+  // Realtime: apply payload immediately (instant UI), then refresh truth (debounced)
   useEffect(() => {
     const sb = sbRef.current;
     if (!sb) return;
@@ -248,7 +259,7 @@ export default function ClientPage() {
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         refreshPublic();
-      }, 100);
+      }, 300);
     };
 
     async function sub() {
@@ -271,9 +282,31 @@ export default function ClientPage() {
               table: "ropes_entries_live",
               filter: `site_id=eq.${siteId}`,
             },
-            () => {
+            (payload) => {
               setOnline(true);
               setLastError("");
+              setUpdatedAt(new Date().toISOString());
+
+              const ev = payload?.eventType;
+              if (!ev) return;
+
+              // Instant UI update from payload
+              setEntries((prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+
+                if (ev === "DELETE") {
+                  const id = payload?.old?.id;
+                  if (!id) return list;
+                  return ensureQueueOrder(list.filter((e) => e.id !== id));
+                }
+
+                const mapped = mapDbEntry(payload?.new);
+                if (!mapped) return list;
+
+                return ensureQueueOrder(upsertById(list, mapped));
+              });
+
+              // Then sync truth in the background
               scheduleRefresh();
             },
           )
@@ -285,9 +318,14 @@ export default function ClientPage() {
               table: "ropes_settings",
               filter: `site_id=eq.${siteId}`,
             },
-            () => {
+            (payload) => {
               setOnline(true);
               setLastError("");
+              setUpdatedAt(new Date().toISOString());
+
+              const mapped = mapDbSettings(payload?.new);
+              if (mapped) setSettings(mapped);
+
               scheduleRefresh();
             },
           )
@@ -295,7 +333,6 @@ export default function ClientPage() {
             if (status === "SUBSCRIBED") {
               setOnline(true);
               setLastError("");
-              // Pull truth as soon as we're subscribed (prevents stale "UP" until manual refresh)
               refreshPublic();
             }
           });
