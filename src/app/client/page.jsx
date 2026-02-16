@@ -1,8 +1,5 @@
-// src/app/client/page.jsx
+// src/app/client/ClientPageClient.jsx
 "use client";
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -148,7 +145,7 @@ function buildLists(entries) {
   return { up, waiting };
 }
 
-export default function ClientPage() {
+export default function ClientPageClient() {
   const sp = useSearchParams();
 
   // URL toggles:
@@ -552,7 +549,6 @@ export default function ClientPage() {
   const activateFullscreen = async () => {
     setActivated(true);
     await requestFullscreen();
-    // fullscreen state will sync via the event listener
   };
 
   // Only show fullscreen controls on screens bigger than a tablet
