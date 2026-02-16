@@ -248,7 +248,7 @@ export default function ClientPage() {
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         refreshPublic();
-      }, 250);
+      }, 100);
     };
 
     async function sub() {
