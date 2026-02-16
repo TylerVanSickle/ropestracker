@@ -13,11 +13,13 @@ import {
 
 const COMMON_SIZES = [2, 4, 6];
 const FALLBACK_REFRESH_MS = 15000;
+const SITE_SLUG = "main";
 
 function makeSupabaseBrowser() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) return null;
+
   return createClient(url, anon, {
     auth: { persistSession: false },
     realtime: { params: { eventsPerSecond: 20 } },
@@ -90,14 +92,6 @@ function mapDbEntry(db) {
   };
 }
 
-function upsertById(list, item) {
-  const idx = list.findIndex((x) => x.id === item.id);
-  if (idx < 0) return [...list, item];
-  const next = list.slice();
-  next[idx] = { ...next[idx], ...item };
-  return next;
-}
-
 function buildLists(entries) {
   const normalized = ensureQueueOrder(Array.isArray(entries) ? entries : []);
 
@@ -123,6 +117,14 @@ function buildLists(entries) {
   return { up, waiting };
 }
 
+function summarizeSupabaseError(e) {
+  if (!e) return "Unknown error";
+  const msg = e.message || String(e);
+  const code = e.code ? ` (${e.code})` : "";
+  const details = e.details ? ` — ${e.details}` : "";
+  return `${msg}${code}${details}`.slice(0, 220);
+}
+
 export default function ClientPage() {
   const [settings, setSettings] = useState({
     totalLines: 15,
@@ -136,13 +138,14 @@ export default function ClientPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [activated, setActivated] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [online, setOnline] = useState(false);
+  const [lastError, setLastError] = useState("");
 
   const nowDate = useMemo(() => new Date(nowTick), [nowTick]);
 
   const sbRef = useRef(null);
   const siteIdRef = useRef(null);
   const channelRef = useRef(null);
-  const [online, setOnline] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
@@ -152,15 +155,18 @@ export default function ClientPage() {
   async function loadSiteId(sb) {
     if (siteIdRef.current) return siteIdRef.current;
 
-    // You said your health endpoint shows slug "main"
     const { data, error } = await sb
       .from("ropes_sites")
       .select("id, slug")
-      .eq("slug", "main")
-      .single();
+      .eq("slug", SITE_SLUG)
+      .maybeSingle();
 
     if (error) throw error;
-    if (!data?.id) throw new Error("No site id found for slug 'main'.");
+    if (!data?.id) {
+      throw new Error(
+        `No site found for slug '${SITE_SLUG}'. (Or anon cannot read ropes_sites)`,
+      );
+    }
 
     siteIdRef.current = data.id;
     return data.id;
@@ -175,7 +181,11 @@ export default function ClientPage() {
 
       const [{ data: s, error: se }, { data: rows, error: ee }] =
         await Promise.all([
-          sb.from("ropes_settings").select("*").eq("site_id", siteId).single(),
+          sb
+            .from("ropes_settings")
+            .select("*")
+            .eq("site_id", siteId)
+            .maybeSingle(),
           sb
             .from("ropes_entries_live")
             .select("*")
@@ -195,8 +205,11 @@ export default function ClientPage() {
       setEntries(ensureQueueOrder(mappedEntries));
       setUpdatedAt(new Date().toISOString());
       setOnline(true);
+      setLastError("");
     } catch (e) {
+      console.error("[/client] refreshPublic failed:", e);
       setOnline(false);
+      setLastError(summarizeSupabaseError(e));
     }
   }
 
@@ -205,7 +218,13 @@ export default function ClientPage() {
     const sb = sbRef.current || makeSupabaseBrowser();
     sbRef.current = sb;
 
-    if (!sb) return;
+    if (!sb) {
+      setOnline(false);
+      setLastError(
+        "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in this build.",
+      );
+      return;
+    }
 
     refreshPublic();
 
@@ -214,12 +233,23 @@ export default function ClientPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Realtime subscribe
+  // Realtime subscribe:
+  // Instead of trying to patch local state from event payloads (which can drift),
+  // any change triggers a debounced refreshPublic() to pull DB truth.
   useEffect(() => {
     const sb = sbRef.current;
     if (!sb) return;
 
     let cancelled = false;
+    let refreshTimer = null;
+
+    const scheduleRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        refreshPublic();
+      }, 250);
+    };
 
     async function sub() {
       try {
@@ -241,28 +271,10 @@ export default function ClientPage() {
               table: "ropes_entries_live",
               filter: `site_id=eq.${siteId}`,
             },
-            (payload) => {
-              const ev = payload?.eventType;
-              if (!ev) return;
-
-              setEntries((prev) => {
-                const list = Array.isArray(prev) ? prev : [];
-
-                if (ev === "DELETE") {
-                  const id = payload?.old?.id;
-                  if (!id) return list;
-                  return ensureQueueOrder(list.filter((e) => e.id !== id));
-                }
-
-                const row = payload?.new;
-                const mapped = mapDbEntry(row);
-                if (!mapped) return list;
-
-                return ensureQueueOrder(upsertById(list, mapped));
-              });
-
-              setUpdatedAt(new Date().toISOString());
+            () => {
               setOnline(true);
+              setLastError("");
+              scheduleRefresh();
             },
           )
           .on(
@@ -273,21 +285,26 @@ export default function ClientPage() {
               table: "ropes_settings",
               filter: `site_id=eq.${siteId}`,
             },
-            (payload) => {
-              const mapped = mapDbSettings(payload?.new);
-              if (!mapped) return;
-              setSettings(mapped);
-              setUpdatedAt(new Date().toISOString());
+            () => {
               setOnline(true);
+              setLastError("");
+              scheduleRefresh();
             },
           )
           .subscribe((status) => {
-            if (status === "SUBSCRIBED") setOnline(true);
+            if (status === "SUBSCRIBED") {
+              setOnline(true);
+              setLastError("");
+              // Pull truth as soon as we're subscribed (prevents stale "UP" until manual refresh)
+              refreshPublic();
+            }
           });
 
         channelRef.current = ch;
-      } catch {
+      } catch (e) {
+        console.error("[/client] realtime subscribe failed:", e);
         setOnline(false);
+        setLastError(summarizeSupabaseError(e));
       }
     }
 
@@ -295,7 +312,14 @@ export default function ClientPage() {
 
     return () => {
       cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = null;
+      try {
+        if (channelRef.current) sb.removeChannel(channelRef.current);
+      } catch {}
+      channelRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fullscreen exit handling
@@ -316,7 +340,6 @@ export default function ClientPage() {
 
   const durationMin = settings?.durationMin ?? 45;
   const totalLines = settings?.totalLines ?? 15;
-
   const closed = !!settings?.paused;
 
   const venueName = useMemo(() => {
@@ -414,7 +437,6 @@ export default function ClientPage() {
       };
     }
 
-    // IMPORTANT: avoid flicker by using live derived state only
     if (up.length === 0) {
       return {
         badge: "Ready",
@@ -437,7 +459,9 @@ export default function ClientPage() {
 
   return (
     <div
-      className={`client-display ${themeClass} ${activated ? "client-active" : ""}`}
+      className={`client-display ${themeClass} ${
+        activated ? "client-active" : ""
+      }`}
     >
       <div className="client-wrap">
         <header className="client-header">
@@ -455,8 +479,15 @@ export default function ClientPage() {
               {closed ? "Closed" : "Live"}
             </div>
 
-            <div className="client-pill" title="Realtime connection">
-              {online ? "Realtime" : "Offline"}
+            <div
+              className="client-pill"
+              title={lastError || "Realtime connection"}
+            >
+              {online
+                ? "Realtime"
+                : lastError
+                  ? `Offline: ${lastError}`
+                  : "Offline"}
             </div>
 
             {updatedLabel ? (
