@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   loadEntries,
   loadSettings,
-  saveSettings, //  ADD THIS
+  saveSettings, // kept (you may use later)
   saveEntries,
   uid,
   subscribeToRopesStorage,
@@ -19,6 +19,7 @@ import {
   clampText,
   clampInt,
   digitsOnlyMax,
+  ensureQueueOrder, // use the store version (stable manual ordering)
 } from "@/app/lib/ropesStore";
 
 import Topbar from "@/app/components/ropes/Topbar";
@@ -33,7 +34,6 @@ import {
   buildSmsHref,
   computeEstimates,
   copyToClipboard,
-  ensureQueueOrder,
   getWaitRangeText,
   minutesFromNow,
 } from "@/app/lib/ropesUtils";
@@ -74,7 +74,7 @@ function makeSupabaseBrowser() {
 }
 
 function makeClientUuid() {
-  //  MUST be a UUID because DB column is uuid
+  // MUST be a UUID because DB column is uuid
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
@@ -82,7 +82,14 @@ function makeClientUuid() {
   return uid();
 }
 
-//  Simple collapsible — NO effects, NO persistence (fixes your lint rule)
+// ensure queueOrder is present on every entry (store helper mutates + returns changed boolean)
+function ensureQueueOrderList(list) {
+  const next = Array.isArray(list) ? list.slice() : [];
+  ensureQueueOrder(next);
+  return next;
+}
+
+// Simple collapsible — NO effects, NO persistence (fixes your lint rule)
 function CollapsibleCard({ title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   return (
@@ -150,6 +157,13 @@ function mapDbSettings(db) {
 
 function mapDbEntry(db) {
   if (!db || typeof db !== "object") return null;
+
+  // IMPORTANT:
+  // If queue_order is null/invalid, keep it as null (NOT 0),
+  // so ensureQueueOrder can assign a stable value and we don’t “shuffle” later.
+  const qo = Number(db.queue_order);
+  const queueOrder = Number.isFinite(qo) && qo > 0 ? qo : null;
+
   return {
     id: db.id,
     name: db.name ?? "Guest",
@@ -158,10 +172,7 @@ function mapDbEntry(db) {
     notes: db.notes ?? "",
     status: String(db.status ?? "WAITING"),
     coursePhase: db.course_phase ?? null,
-    queueOrder:
-      typeof db.queue_order === "number"
-        ? db.queue_order
-        : Number(db.queue_order ?? 0),
+    queueOrder,
     assignedTag: db.assigned_tag ?? null,
     linesUsed: Number(db.lines_used ?? Number(db.party_size ?? 1)),
     timeAdjustMin: Number(db.time_adjust_min ?? 0),
@@ -173,7 +184,6 @@ function mapDbEntry(db) {
     endTime: db.end_time ?? null,
     endedEarlyAt: db.ended_early_at ?? null,
 
-    // optional columns later
     lastNotifiedAt: db.last_notified_at ?? null,
     notifiedCount: db.notified_count ?? 0,
     reserveAtISO: db.reserve_at_iso ?? null,
@@ -221,7 +231,7 @@ async function statePut(body) {
   const res = await fetch("/api/state", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    credentials: "include", //  ensure cookies are sent (staff wall)
+    credentials: "include", // ensure cookies are sent (staff wall)
     body: JSON.stringify(body),
   });
 
@@ -254,7 +264,7 @@ async function statePut(body) {
 }
 
 function upsertById(list, item) {
-  const idx = list.findIndex((x) => x.id === item.id);
+  const idx = list.findIndex((x) => String(x.id) === String(item.id));
   if (idx < 0) return [...list, item];
   const next = list.slice();
   next[idx] = { ...next[idx], ...item };
@@ -263,7 +273,15 @@ function upsertById(list, item) {
 
 export default function Home() {
   const [settings, setSettings] = useState(() => loadSettings());
-  const [entries, setEntries] = useState(() => ensureQueueOrder(loadEntries()));
+  const [entries, setEntries] = useState(() =>
+    ensureQueueOrderList(loadEntries()),
+  );
+  const entriesRef = useRef(entries);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
   const [now, setNow] = useState(() => new Date());
 
   const [undoStack, setUndoStack] = useState(() => loadUndoStack());
@@ -316,7 +334,7 @@ export default function Home() {
 
   const refreshFromLocal = () => {
     setSettings(loadSettings());
-    setEntries(ensureQueueOrder(loadEntries()));
+    setEntries(ensureQueueOrderList(loadEntries()));
     setUndoStack(loadUndoStack());
   };
 
@@ -335,10 +353,12 @@ export default function Home() {
         setSettings(nextSettings);
         siteIdRef.current = nextSettings.siteId || siteIdRef.current;
       }
-      setEntries(ensureQueueOrder(nextEntries));
+
+      const ensured = ensureQueueOrderList(nextEntries);
+      setEntries(ensured);
 
       try {
-        saveEntries(ensureQueueOrder(nextEntries));
+        saveEntries(ensured);
       } catch {}
     } catch {
       setRemoteOnline(false);
@@ -433,14 +453,33 @@ export default function Home() {
               if (ev === "DELETE") {
                 const id = payload?.old?.id;
                 if (!id) return list;
-                return ensureQueueOrder(list.filter((e) => e.id !== id));
+                const next = list.filter((e) => String(e.id) !== String(id));
+                return ensureQueueOrderList(next);
               }
 
               const row = payload?.new;
               const mapped = mapDbEntry(row);
               if (!mapped) return list;
 
-              return ensureQueueOrder(upsertById(list, mapped));
+              // IMPORTANT: preserve local queueOrder if the incoming row has null queueOrder.
+              // This prevents the DB/refresh stream from clobbering manual ordering
+              // when queue_order is missing/late.
+              const existing = list.find(
+                (e) => String(e.id) === String(mapped.id),
+              );
+              const merged = existing
+                ? {
+                    ...existing,
+                    ...mapped,
+                    queueOrder:
+                      mapped.queueOrder != null
+                        ? mapped.queueOrder
+                        : (existing.queueOrder ?? null),
+                  }
+                : mapped;
+
+              const next = upsertById(list, merged);
+              return ensureQueueOrderList(next);
             });
 
             setRemoteOnline(true);
@@ -505,7 +544,7 @@ export default function Home() {
       if (!prev || prev.length === 0) return prev;
       const [top, ...rest] = prev;
       if (top?.entries) {
-        setEntries(ensureQueueOrder(top.entries));
+        setEntries(ensureQueueOrderList(top.entries));
       }
       saveUndoStack(rest);
       return rest;
@@ -514,12 +553,13 @@ export default function Home() {
 
   const waiting = useMemo(() => {
     return entries
-      .filter((e) => e.status === "WAITING")
-      .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
+      .filter((e) => String(e.status || "").toUpperCase() === "WAITING")
+      .slice()
+      .sort((a, b) => Number(a.queueOrder ?? 0) - Number(b.queueOrder ?? 0));
   }, [entries]);
 
   const active = useMemo(
-    () => entries.filter((e) => e.status === "UP"),
+    () => entries.filter((e) => String(e.status || "").toUpperCase() === "UP"),
     [entries],
   );
 
@@ -601,7 +641,9 @@ export default function Home() {
   ]);
 
   const reservationsCount = useMemo(
-    () => entries.filter((e) => e.status === "RESERVED").length,
+    () =>
+      entries.filter((e) => String(e.status || "").toUpperCase() === "RESERVED")
+        .length,
     [entries],
   );
 
@@ -661,7 +703,7 @@ export default function Home() {
 
       setEntries((prev) =>
         prev.map((e) =>
-          e.id !== entry.id
+          String(e.id) !== String(entry.id)
             ? e
             : {
                 ...e,
@@ -700,7 +742,7 @@ export default function Home() {
   async function addGuest(e) {
     e.preventDefault();
 
-    //  guard: prevents double submit / double click
+    // guard: prevents double submit / double click
     if (createLockRef.current) return;
     createLockRef.current = true;
 
@@ -714,7 +756,7 @@ export default function Home() {
       const maxLines = clampInt(settings.totalLines, 1, 15);
       const partySize = clampInt(newGuest.partySize || 1, 1, maxLines);
 
-      //  IMPORTANT: must be UUID if we send it to DB
+      // IMPORTANT: must be UUID if we send it to DB
       const localId = makeClientUuid();
 
       const createdAtISO = new Date().toISOString();
@@ -723,7 +765,7 @@ export default function Home() {
       // optimistic local
       setEntries((prev) => {
         pushUndoSnapshot(prev);
-        return ensureQueueOrder([
+        const next = [
           ...prev,
           {
             id: localId,
@@ -736,7 +778,8 @@ export default function Home() {
             createdAt: createdAtISO,
             queueOrder,
           },
-        ]);
+        ];
+        return ensureQueueOrderList(next);
       });
 
       setNewGuest({ name: "", phone: "", partySize: 1, notes: "" });
@@ -746,7 +789,7 @@ export default function Home() {
         await statePut({
           op: "CREATE_ENTRY",
           payload: {
-            id: localId, //  uuid
+            id: localId, // uuid
             name,
             party_size: partySize,
             phone: phone || null,
@@ -765,7 +808,7 @@ export default function Home() {
         fireToast(String(err?.message || "Couldn’t sync to server"), "warning");
       }
     } finally {
-      //  always release lock (even if validation returns early)
+      // always release lock (even if validation returns early)
       createLockRef.current = false;
     }
   }
@@ -783,19 +826,22 @@ export default function Home() {
 
     const HOLD_MIN = settings.durationMin;
 
-    const waitingPrev = entries
-      .filter((e) => e.status === "WAITING")
-      .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
+    const waitingPrev = entriesRef.current
+      .filter((e) => String(e.status || "").toUpperCase() === "WAITING")
+      .slice()
+      .sort((a, b) => Number(a.queueOrder ?? 0) - Number(b.queueOrder ?? 0));
 
     if (!waitingPrev.length) return;
 
     const front = waitingPrev[0];
-    if (front.id !== id) {
+    if (String(front.id) !== String(id)) {
       alert("You can’t skip the line. Only the next group can be sent up.");
       return;
     }
 
-    const activePrev = entries.filter((e) => e.status === "UP");
+    const activePrev = entriesRef.current.filter(
+      (e) => String(e.status || "").toUpperCase() === "UP",
+    );
     const occupiedPrev = activePrev.reduce(
       (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
       0,
@@ -829,7 +875,9 @@ export default function Home() {
 
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-      return prev.map((e) => (e.id !== id ? e : { ...e, ...patch }));
+      return prev.map((e) =>
+        String(e.id) !== String(id) ? e : { ...e, ...patch },
+      );
     });
 
     try {
@@ -850,11 +898,13 @@ export default function Home() {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
       return prev.map((e) =>
-        e.id === id ? { ...e, status: "DONE", linesUsed: 0 } : e,
+        String(e.id) === String(id)
+          ? { ...e, status: "DONE", linesUsed: 0 }
+          : e,
       );
     });
 
-    //  move to history so it disappears from live table too
+    // move to history so it disappears from live table too
     try {
       await statePut({
         op: "MOVE_TO_HISTORY",
@@ -871,7 +921,7 @@ export default function Home() {
   async function remove(id) {
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-      return prev.filter((e) => e.id !== id);
+      return prev.filter((e) => String(e.id) !== String(id));
     });
 
     try {
@@ -904,59 +954,79 @@ export default function Home() {
     }
   }
 
+  // IMPORTANT: compute swap from the latest entries (via ref) to avoid “sometimes works”
   async function moveWaiting(id, direction) {
-    let swappedA = null;
-    let swappedB = null;
+    const targetId = String(id);
 
+    const current = Array.isArray(entriesRef.current) ? entriesRef.current : [];
+
+    const waitingNow = current
+      .filter((e) => String(e.status || "").toUpperCase() === "WAITING")
+      .slice()
+      .sort((a, b) => Number(a.queueOrder ?? 0) - Number(b.queueOrder ?? 0));
+
+    const idx = waitingNow.findIndex((e) => String(e.id) === targetId);
+    if (idx < 0) return;
+
+    const swapIdx = direction === "UP" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= waitingNow.length) return;
+
+    const a = waitingNow[idx];
+    const b = waitingNow[swapIdx];
+
+    const aOrder = Number(a.queueOrder);
+    const bOrder = Number(b.queueOrder);
+
+    if (
+      !Number.isFinite(aOrder) ||
+      !Number.isFinite(bOrder) ||
+      aOrder <= 0 ||
+      bOrder <= 0
+    ) {
+      // normalize locally then let them click again (prevents 0/0 no-op swaps)
+      setEntries((prev) => {
+        pushUndoSnapshot(prev);
+        return ensureQueueOrderList(prev);
+      });
+      fireToast("Order normalized — try again", "info");
+      return;
+    }
+
+    const swappedA = { id: a.id, queueOrder: bOrder };
+    const swappedB = { id: b.id, queueOrder: aOrder };
+
+    // optimistic local swap
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-
-      const waitingPrev = prev
-        .filter((e) => e.status === "WAITING")
-        .sort((a, b) => (a.queueOrder ?? 0) - (b.queueOrder ?? 0));
-
-      const idx = waitingPrev.findIndex((e) => e.id === id);
-      if (idx < 0) return prev;
-
-      const swapIdx = direction === "UP" ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= waitingPrev.length) return prev;
-
-      const a = waitingPrev[idx];
-      const b = waitingPrev[swapIdx];
-
-      const aOrder = a.queueOrder ?? 0;
-      const bOrder = b.queueOrder ?? 0;
-
-      swappedA = { id: a.id, queueOrder: bOrder };
-      swappedB = { id: b.id, queueOrder: aOrder };
-
-      return prev.map((e) => {
-        if (e.id === a.id) return { ...e, queueOrder: bOrder };
-        if (e.id === b.id) return { ...e, queueOrder: aOrder };
+      const next = prev.map((e) => {
+        const eid = String(e.id);
+        if (eid === String(swappedA.id))
+          return { ...e, queueOrder: swappedA.queueOrder };
+        if (eid === String(swappedB.id))
+          return { ...e, queueOrder: swappedB.queueOrder };
         return e;
       });
+      return ensureQueueOrderList(next);
     });
 
     try {
-      if (swappedA && swappedB) {
-        await Promise.all([
-          statePut({
-            op: "PATCH_ENTRY",
-            payload: {
-              id: swappedA.id,
-              patch: { queue_order: swappedA.queueOrder },
-            },
-          }),
-          statePut({
-            op: "PATCH_ENTRY",
-            payload: {
-              id: swappedB.id,
-              patch: { queue_order: swappedB.queueOrder },
-            },
-          }),
-        ]);
-        setRemoteOnline(true);
-      }
+      await Promise.all([
+        statePut({
+          op: "PATCH_ENTRY",
+          payload: {
+            id: swappedA.id,
+            patch: toDbPatchFromUi({ queueOrder: swappedA.queueOrder }),
+          },
+        }),
+        statePut({
+          op: "PATCH_ENTRY",
+          payload: {
+            id: swappedB.id,
+            patch: toDbPatchFromUi({ queueOrder: swappedB.queueOrder }),
+          },
+        }),
+      ]);
+      setRemoteOnline(true);
     } catch (err) {
       console.error("PATCH_ENTRY (moveWaiting) failed:", err);
       setRemoteOnline(false);
@@ -974,7 +1044,7 @@ export default function Home() {
         const transitioned = [];
 
         const next = prev.map((e) => {
-          if (e.status !== "RESERVED") return e;
+          if (String(e.status || "").toUpperCase() !== "RESERVED") return e;
           const at = e.reserveAtISO ? new Date(e.reserveAtISO).getTime() : 0;
           if (!at || Number.isNaN(at)) return e;
           if (at > nowMs) return e;
@@ -1000,14 +1070,17 @@ export default function Home() {
                 op: "PATCH_ENTRY",
                 payload: {
                   id: x.id,
-                  patch: { status: "WAITING", queue_order: x.queueOrder },
+                  patch: toDbPatchFromUi({
+                    status: "WAITING",
+                    queueOrder: x.queueOrder,
+                  }),
                 },
               }),
             ),
           ).catch(() => setRemoteOnline(false));
         }
 
-        return ensureQueueOrder(next);
+        return ensureQueueOrderList(next);
       });
     }, 15000);
 
@@ -1017,7 +1090,7 @@ export default function Home() {
 
   const editingEntry = useMemo(() => {
     if (!editingId) return null;
-    return entries.find((e) => e.id === editingId) || null;
+    return entries.find((e) => String(e.id) === String(editingId)) || null;
   }, [editingId, entries]);
 
   async function saveEdit(updated) {
@@ -1029,7 +1102,9 @@ export default function Home() {
 
     setEntries((prev) => {
       pushUndoSnapshot(prev);
-      return prev.map((e) => (e.id === coerced.id ? coerced : e));
+      return prev.map((e) =>
+        String(e.id) === String(coerced.id) ? coerced : e,
+      );
     });
 
     setEditingId(null);
