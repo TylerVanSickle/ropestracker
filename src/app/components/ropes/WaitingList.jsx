@@ -22,6 +22,7 @@ export default function WaitingList({
       0,
     );
   }, [waiting]);
+
   return (
     <div className="card">
       <div

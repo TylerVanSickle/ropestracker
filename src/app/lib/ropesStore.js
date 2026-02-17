@@ -18,8 +18,8 @@ export const LS_KEY_GUEST_NOTES = "ropes_guest_notes_v1";
 export const LS_KEY_FLAG_ARCHIVE = "ropes_flag_archive_v1";
 
 /**
-  Limits (DB-ready)
- *  */
+ * Limits (DB-ready)
+ */
 export const LIMITS = {
   // entry fields
   entryName: 50,
@@ -52,7 +52,7 @@ export function clampText(value, max) {
   return trimmedStart.slice(0, max);
 }
 
-//   exported because app/page.js imports it
+// exported because app/page.js imports it
 export function digitsOnlyMax(s, maxDigits) {
   const raw = String(s ?? "");
   const digits = raw.replace(/\D/g, "");
@@ -98,6 +98,7 @@ function bumpVersion() {
 
 function stampUpdatedAt() {
   try {
+    // IMPORTANT: always a number (ms since epoch)
     localStorage.setItem(LS_KEY_UPDATED_AT, String(Date.now()));
   } catch {
     // ok
@@ -108,6 +109,12 @@ function stampAll(type) {
   stampUpdatedAt();
   bumpVersion();
   broadcastUpdate(type);
+  try {
+    // same-tab refresh signal
+    window.dispatchEvent(new Event("ropes_storage"));
+  } catch {
+    // ok
+  }
 }
 
 /** =========================
@@ -204,13 +211,13 @@ export function loadSettings() {
     const clientTheme =
       t === "dark" || t === "light" || t === "auto" ? t : "auto";
 
-    //   PIN: digits only, max 4
+    // PIN: digits only, max 4
     const staffPin = digitsOnlyMax(
       parsed.staffPin ?? DEFAULT_SETTINGS.staffPin,
       LIMITS.staffPinMaxDigits,
     );
 
-    //   Flow control (Top can pause Bottom send-ups)
+    // Flow control (Top can pause Bottom send-ups)
     const flowPaused = Boolean(
       parsed.flowPaused ?? DEFAULT_SETTINGS.flowPaused,
     );
@@ -245,7 +252,7 @@ export function loadSettings() {
       flowPausedAt,
     };
 
-    // normalize stored settings
+    // normalize stored settings (does NOT stamp; load should be read-only)
     localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(settings));
     return settings;
   } catch {
@@ -263,11 +270,8 @@ export function saveSettings(next) {
 
     localStorage.setItem(LS_KEY_SETTINGS, JSON.stringify(merged));
 
-    //   this is the "signal" that forces other screens to refresh
-    localStorage.setItem(LS_KEY_UPDATED_AT, new Date().toISOString());
-
-    //   if your subscribeToRopesStorage listens to a custom event, fire it
-    window.dispatchEvent(new Event("ropes_storage"));
+    // consistent stamping/broadcasting
+    stampAll("SETTINGS_UPDATED");
   } catch {
     // ignore
   }
@@ -280,13 +284,54 @@ export function patchSettings(partial) {
   return next;
 }
 
+/** =========================
+ *  Entries
+ *  */
+
+/**
+ * Stable manual order support:
+ * - queueOrder is the only thing that should define manual ordering
+ * - we ONLY assign queueOrder if missing (never rebuild / never re-sequence)
+ */
+export function ensureQueueOrder(entries) {
+  const arr = Array.isArray(entries) ? entries : [];
+  let max = 0;
+
+  for (const e of arr) {
+    const v = Number(e?.queueOrder);
+    if (Number.isFinite(v)) max = Math.max(max, v);
+  }
+
+  let changed = false;
+  for (const e of arr) {
+    if (!e || typeof e !== "object") continue;
+    if (!Number.isFinite(Number(e.queueOrder))) {
+      max += 1;
+      e.queueOrder = max;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export function loadEntries() {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(LS_KEY_ENTRIES);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+
+    // normalize + backfill queueOrder once
+    const { entries: normalized, changed } = normalizeEntries(list);
+    if (changed) {
+      // save once so order becomes stable across refresh/devices
+      localStorage.setItem(LS_KEY_ENTRIES, JSON.stringify(normalized));
+      stampAll("ENTRIES_NORMALIZED");
+    }
+
+    return normalized;
   } catch {
     return [];
   }
@@ -304,16 +349,17 @@ export function subscribeToRopesStorage(cb) {
 
   const handler = () => cb?.();
 
-  //   same-tab updates (our explicit signal)
+  // same-tab updates (our explicit signal)
   window.addEventListener("ropes_storage", handler);
 
-  //   cross-tab updates (native storage event)
+  // cross-tab updates (native storage event)
   const onStorage = (e) => {
     if (!e) return;
     if (
       e.key === LS_KEY_ENTRIES ||
       e.key === LS_KEY_SETTINGS ||
-      e.key === LS_KEY_UPDATED_AT
+      e.key === LS_KEY_UPDATED_AT ||
+      e.key === LS_KEY_VERSION
     ) {
       handler();
     }
@@ -524,7 +570,7 @@ export async function archiveFlaggedEntry({
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
 
-  const target = normalized.find((e) => e && e.id === entryId);
+  const target = normalized.find((e) => e && String(e.id) === String(entryId));
   if (!target) return null;
 
   const guestNotes = getNotesForEntry(entryId);
@@ -547,6 +593,7 @@ export async function archiveFlaggedEntry({
       sentUpAt: target.sentUpAt ?? null,
       startedAt: target.startedAt ?? null,
       assignedTag: target.assignedTag ?? null,
+      queueOrder: target.queueOrder ?? null,
     },
     guestNotes: Array.isArray(guestNotes) ? guestNotes : [],
   };
@@ -563,13 +610,14 @@ export async function archiveFlaggedEntry({
     if (!res.ok) throw new Error(data?.error || "Archive failed");
     saved = data.record;
   } catch (e) {
-    // If you want: you can fall back to localStorage here instead of failing.
     throw e;
   }
 
   // Keep your existing local behavior (optional but nice UX)
   if (removeFromActive) {
-    const nextEntries = normalized.filter((e) => e.id !== entryId);
+    const nextEntries = normalized.filter(
+      (e) => String(e.id) !== String(entryId),
+    );
     saveEntries(nextEntries);
   }
 
@@ -600,8 +648,8 @@ export function deleteArchiveRecord(recordId) {
 }
 
 /*
- *  Merge (Top "Coming Up Now")
- *  */
+ * Merge (Top "Coming Up Now")
+ */
 
 export function mergeEntries(
   primaryId,
@@ -615,8 +663,8 @@ export function mergeEntries(
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
 
-  const a = normalized.find((e) => e.id === aId);
-  const b = normalized.find((e) => e.id === bId);
+  const a = normalized.find((e) => String(e.id) === aId);
+  const b = normalized.find((e) => String(e.id) === bId);
   if (!a || !b) return normalized;
 
   // Only merge "Coming Up" groups (SENT phase)
@@ -637,10 +685,7 @@ export function mergeEntries(
     LIMITS.entryPhone,
   );
 
-  // Tag logic:
-  // - keep primary tag if set
-  // - else take secondary tag
-  // - if both exist but differ: clear to force re-select
+  // Tag logic
   let assignedTag = a.assignedTag ?? null;
   if (!assignedTag && b.assignedTag) assignedTag = b.assignedTag;
   if (a.assignedTag && b.assignedTag && a.assignedTag !== b.assignedTag) {
@@ -674,7 +719,7 @@ export function mergeEntries(
 
   const nextEntries = normalized
     .map((e) => {
-      if (e.id !== aId) return e;
+      if (String(e.id) !== aId) return e;
       return {
         ...e,
         name: mergedName,
@@ -687,7 +732,7 @@ export function mergeEntries(
         linesUsed: mergedPartySize,
       };
     })
-    .filter((e) => e.id !== bId);
+    .filter((e) => String(e.id) !== bId);
 
   saveEntries(nextEntries);
 
@@ -718,7 +763,14 @@ export function normalizeEntry(e) {
 
   return {
     ...e,
+    id: e.id != null ? String(e.id) : e.id,
     partySize: partyLines,
+
+    // manual ordering support (filled later if missing)
+    queueOrder: Number.isFinite(Number(e.queueOrder))
+      ? Number(e.queueOrder)
+      : e.queueOrder,
+
     assignedTag: e.assignedTag ?? null,
     endedEarlyAt: e.endedEarlyAt ?? null,
     timeAdjustMin: Number.isFinite(Number(e.timeAdjustMin))
@@ -735,15 +787,20 @@ export function normalizeEntry(e) {
 export function normalizeEntries(list) {
   const arr = Array.isArray(list) ? list : [];
   const next = arr.map((e) => normalizeEntry(e));
-  return { entries: next, changed: false };
+
+  // Backfill queueOrder only when missing
+  const changed = ensureQueueOrder(next);
+
+  return { entries: next, changed };
 }
 
 export function patchEntry(entryId, patch) {
+  const id = String(entryId || "");
   const entries = loadEntries();
   const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) =>
-    e.id === entryId ? { ...e, ...patch } : e,
+    String(e.id) === id ? { ...e, ...(patch || {}) } : e,
   );
 
   saveEntries(next);
@@ -770,7 +827,7 @@ export function startEntry(entryId, durationMin) {
   const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) => {
-    if (e.id !== entryId) return e;
+    if (String(e.id) !== String(entryId)) return e;
 
     const linesNeeded = Math.max(1, Math.trunc(Number(e.partySize || 1)) || 1);
 
@@ -796,7 +853,7 @@ export function extendEntryByMinutes(entryId, addMin) {
   const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) => {
-    if (e.id !== entryId) return e;
+    if (String(e.id) !== String(entryId)) return e;
 
     const currentEnd = e.endTime ? new Date(e.endTime) : null;
     if (!currentEnd || Number.isNaN(currentEnd.getTime())) return e;
@@ -844,7 +901,7 @@ export function startTopCourse(entryId, topDurationMin) {
   const { entries: normalized } = normalizeEntries(entries);
 
   const next = normalized.map((e) => {
-    if (e.id !== entryId) return e;
+    if (String(e.id) !== String(entryId)) return e;
 
     const linesNeeded = Math.max(1, Math.trunc(Number(e.partySize || 1)) || 1);
 
@@ -865,7 +922,6 @@ export function startTopCourse(entryId, topDurationMin) {
 // THIS IS FOR WHEN WE IMPLEMENT TWILLIO IT FORMATS PHONES
 export function toE164US(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
-
   if (!digits) return null;
 
   // If 11 digits and starts with 1, keep it
