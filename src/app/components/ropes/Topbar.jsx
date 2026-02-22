@@ -112,6 +112,12 @@ export default function Topbar({
           <Link className="button" href="/archive">
             Archive
           </Link>
+          <Link className="button" href="/analytics">
+            Analytics
+          </Link>
+          <Link className="button" href="/admin/qr">
+            QR Codes
+          </Link>
         </div>
       </div>
 
