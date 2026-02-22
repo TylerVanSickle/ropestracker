@@ -22,6 +22,32 @@ import {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Force analytics display timezone (MST/MDT handled automatically by IANA zone)
+const ANALYTICS_TZ = "America/Denver";
+
+// ---- Timezone-safe helpers (always render in ANALYTICS_TZ) ----
+function safeDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+function ymdInTimeZone(date, timeZone) {
+  // en-CA gives YYYY-MM-DD reliably
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function ymdTodayLocal() {
+  // Use ANALYTICS_TZ (MST/MDT)
+  return ymdInTimeZone(new Date(), ANALYTICS_TZ);
+}
+
 function fmtSecs(sec) {
   const s = Math.max(0, Number(sec || 0));
   const m = Math.round(s / 60);
@@ -38,28 +64,45 @@ function fmtNum(n, digits = 0) {
 }
 
 function fmtDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
+  const d = safeDate(iso);
+  if (!d) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: ANALYTICS_TZ,
     year: "numeric",
     month: "short",
     day: "numeric",
-  });
+  }).format(d);
 }
 
 function fmtHourBucket(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString(undefined, { weekday: "short", hour: "numeric" });
+  const d = safeDate(iso);
+  if (!d) return iso ? String(iso) : "—";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: ANALYTICS_TZ,
+    weekday: "short",
+    hour: "numeric",
+  }).format(d);
 }
 
 function fmtDayBucketShort(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const d = safeDate(iso);
+  if (!d) return iso ? String(iso) : "—";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: ANALYTICS_TZ,
+    month: "short",
+    day: "numeric",
+  }).format(d);
+}
+
+function fmtDayFull(iso) {
+  const d = safeDate(iso);
+  if (!d) return iso ? String(iso) : "—";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: ANALYTICS_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(d);
 }
 
 function pct(n, denom) {
@@ -67,14 +110,6 @@ function pct(n, denom) {
   const b = Number(denom || 0);
   if (!b) return "0%";
   return `${Math.round((a / b) * 100)}%`;
-}
-
-function ymdTodayLocal() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 function Card({ title, subtitle, right, children, style }) {
@@ -123,67 +158,93 @@ function Kpi({ label, value, sub }) {
   );
 }
 
-function Table({ headers, rows }) {
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            {headers.map((h) => (
-              <th
-                key={h}
-                style={{
-                  textAlign: "left",
-                  fontSize: 12,
-                  color: "rgba(255,255,255,0.70)",
-                  fontWeight: 900,
-                  padding: "10px 8px",
-                  borderBottom: "1px solid rgba(255,255,255,0.10)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length ? (
-            rows.map((r, idx) => (
-              <tr
-                key={idx}
-                style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-              >
-                {r.map((cell, cidx) => (
-                  <td
-                    key={cidx}
-                    style={{
-                      padding: "10px 8px",
-                      fontSize: 13,
-                      verticalAlign: "middle",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td
-                colSpan={headers.length}
-                className="muted"
-                style={{ padding: "12px 8px" }}
-              >
-                No data yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
+// ---------- CSV parsing helpers ----------
+function parseCsv(text) {
+  // Basic CSV parser with quotes support.
+  // Returns { headers: string[], rows: Array<Record<string,string>> }
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const headers = parseCsvLine(lines[0]).map((h) => h.trim());
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    if (!cols.length) continue;
+    const obj = {};
+    for (let c = 0; c < headers.length; c++) {
+      obj[headers[c]] = cols[c] ?? "";
+    }
+    rows.push(obj);
+  }
+
+  return { headers, rows };
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        const next = line[i + 1];
+        if (next === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        out.push(cur);
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function numOr0(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getField(row, candidates) {
+  for (const k of candidates) {
+    if (row && row[k] != null && String(row[k]).trim() !== "") return row[k];
+  }
+  return "";
+}
+
+// Convert an ISO timestamp into a YYYY-MM-DD string *in ANALYTICS_TZ*
+function ymdFromIsoInAnalyticsTz(iso) {
+  const d = safeDate(iso);
+  if (!d) return "";
+  return ymdInTimeZone(d, ANALYTICS_TZ); // "YYYY-MM-DD"
+}
+
+// Turn "YYYY-MM-DD" into an ISO-ish string we can feed to fmtDayFull/fmtDayBucketShort
+// We use noon UTC to avoid edge cases; formatting always uses ANALYTICS_TZ anyway.
+function pseudoIsoFromYmd(ymd) {
+  if (!ymd) return "";
+  return `${ymd}T12:00:00.000Z`;
 }
 
 export default function AnalyticsPage() {
@@ -198,6 +259,14 @@ export default function AnalyticsPage() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
 
+  // NEW: CSV-derived busiest people
+  const [csvPeopleByDay, setCsvPeopleByDay] = useState(null); // Map<string, number> as plain object
+  const [csvPeopleInfo, setCsvPeopleInfo] = useState({
+    loading: false,
+    error: "",
+    rowsUsed: 0,
+  });
+
   function buildUrl() {
     if (mode === "RANGE" && startYmd && endYmd) {
       return `/api/analytics?start=${encodeURIComponent(
@@ -206,6 +275,14 @@ export default function AnalyticsPage() {
     }
     return `/api/analytics?days=${days}`;
   }
+
+  const csvHref = useMemo(() => {
+    return mode === "RANGE" && startYmd && endYmd
+      ? `/api/history.csv?start=${encodeURIComponent(
+          startYmd,
+        )}&end=${encodeURIComponent(endYmd)}`
+      : `/api/history.csv?days=${days}`;
+  }, [mode, startYmd, endYmd, days]);
 
   async function load() {
     setErr("");
@@ -228,26 +305,40 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const totals = data?.totals || {};
-  const coverage = data?.coverage || {};
-  const busiestHour = data?.busiest_hour || null;
-  const busiestDow = data?.busiest_dow || null;
+  // Memoize derived arrays to satisfy exhaustive-deps + keep refs stable
+  const totals = useMemo(() => data?.totals || {}, [data]);
+  const coverage = useMemo(() => data?.coverage || {}, [data]);
+  const busiestHour = useMemo(() => data?.busiest_hour || null, [data]);
+  const busiestDow = useMemo(() => data?.busiest_dow || null, [data]);
 
-  const topHours = Array.isArray(data?.top_hours) ? data.top_hours : [];
-  const statusBreakdown = Array.isArray(data?.status_breakdown)
-    ? data.status_breakdown
-    : [];
-  const tagBreakdown = Array.isArray(data?.tag_breakdown)
-    ? data.tag_breakdown
-    : [];
-  const dailyTrend = Array.isArray(data?.daily_trend) ? data.daily_trend : [];
-  const dowBreakdown = Array.isArray(data?.dow_breakdown)
-    ? data.dow_breakdown
-    : [];
+  const topHours = useMemo(
+    () => (Array.isArray(data?.top_hours) ? data.top_hours : []),
+    [data],
+  );
+  const statusBreakdown = useMemo(
+    () => (Array.isArray(data?.status_breakdown) ? data.status_breakdown : []),
+    [data],
+  );
+  const tagBreakdown = useMemo(
+    () => (Array.isArray(data?.tag_breakdown) ? data.tag_breakdown : []),
+    [data],
+  );
+  const dailyTrend = useMemo(
+    () => (Array.isArray(data?.daily_trend) ? data.daily_trend : []),
+    [data],
+  );
+  const dowBreakdown = useMemo(
+    () => (Array.isArray(data?.dow_breakdown) ? data.dow_breakdown : []),
+    [data],
+  );
 
-  const totalEntries = Number(totals.total_entries || 0);
-  const totalPeople = Number(totals.total_people || 0);
+  const totalEntries = Number(totals.total_entries || 0); // DONE groups
+  const totalPeople = Number(totals.total_people || 0); // sum(party_size) for DONE
   const avgParty = Number(totals.avg_party_size || 0);
+
+  const rangeStartIso = data?.range?.start_iso || "";
+  const rangeEndExclusiveIso = data?.range?.end_exclusive_iso || "";
+  const serverTz = data?.range?.timezone || "unknown";
 
   const trendChart = useMemo(() => {
     const sliced = dailyTrend.slice(-21);
@@ -301,6 +392,8 @@ export default function AnalyticsPage() {
       statusBreakdown.find((s) => String(s.status).toUpperCase() === "ARCHIVED")
         ?.entries || 0,
     );
+
+    // archived ÷ DONE totals
     const archiveRate = totalEntries ? archivedCount / totalEntries : 0;
 
     return {
@@ -336,12 +429,156 @@ export default function AnalyticsPage() {
     setEndYmd(t);
   }
 
-  const csvHref =
-    mode === "RANGE" && startYmd && endYmd
-      ? `/api/history.csv?start=${encodeURIComponent(
-          startYmd,
-        )}&end=${encodeURIComponent(endYmd)}`
-      : `/api/history.csv?days=${days}`;
+  // ---- Compute busiest day (groups) from server data (existing) ----
+  const busiestDayGroups = useMemo(() => {
+    const fromApi = data?.busiest_day_groups || null;
+    if (fromApi?.day_bucket) {
+      return {
+        day_bucket: fromApi.day_bucket,
+        entries: Number(fromApi.entries || 0),
+      };
+    }
+    if (!dailyTrend.length) return null;
+    let best = null;
+    for (const d of dailyTrend) {
+      const entries = Number(d?.entries || 0);
+      if (!best || entries > Number(best.entries || 0)) {
+        best = { day_bucket: d?.day_bucket, entries };
+      }
+    }
+    return best;
+  }, [data, dailyTrend]);
+
+  // ---- NEW: CSV fallback for busiest day (people) ----
+  const busiestDayPeople = useMemo(() => {
+    // If API ever adds busiest_day_people, prefer it.
+    const fromApi = data?.busiest_day_people || null;
+    if (fromApi?.day_bucket) {
+      const ppl =
+        numOr0(fromApi.people) ||
+        numOr0(fromApi.total_people) ||
+        numOr0(fromApi.party_size_sum);
+      if (ppl > 0) return { day_bucket: fromApi.day_bucket, people: ppl };
+    }
+
+    // Otherwise use CSV-derived map
+    if (!csvPeopleByDay) return null;
+
+    let bestYmd = "";
+    let bestPeople = 0;
+
+    for (const [ymd, people] of Object.entries(csvPeopleByDay)) {
+      const p = Number(people || 0);
+      if (p > bestPeople) {
+        bestPeople = p;
+        bestYmd = ymd;
+      }
+    }
+
+    if (!bestYmd || bestPeople <= 0) return null;
+
+    return {
+      day_bucket: pseudoIsoFromYmd(bestYmd),
+      people: bestPeople,
+    };
+  }, [data, csvPeopleByDay]);
+
+  // Fetch & aggregate CSV whenever the selected range changes AND we don’t already have day-people data.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      // If API starts providing it later, stop doing CSV work.
+      if (data?.busiest_day_people?.day_bucket) return;
+
+      setCsvPeopleInfo((s) => ({ ...s, loading: true, error: "" }));
+      try {
+        const res = await fetch(csvHref, { credentials: "include" });
+        const text = await res.text();
+        if (!res.ok) throw new Error(`CSV export failed (${res.status})`);
+
+        const { headers, rows } = parseCsv(text);
+
+        // Identify columns (be flexible with names)
+        const statusCol =
+          headers.find((h) => h.toLowerCase() === "status") || "";
+        const partyCol =
+          headers.find((h) => h.toLowerCase() === "party_size") ||
+          headers.find((h) => h.toLowerCase() === "party") ||
+          headers.find((h) => h.toLowerCase() === "people") ||
+          "";
+        const finishedCol =
+          headers.find((h) => h.toLowerCase() === "finished_at") ||
+          headers.find((h) => h.toLowerCase() === "finished") ||
+          headers.find((h) => h.toLowerCase() === "done_at") ||
+          "";
+
+        // If no party_size column, we can’t compute people. (keeps the chip as —)
+        if (!partyCol || !finishedCol) {
+          if (!cancelled) {
+            setCsvPeopleByDay({});
+            setCsvPeopleInfo((s) => ({
+              ...s,
+              loading: false,
+              error: `CSV is missing required columns (need finished_at + party_size). Found: ${headers
+                .slice(0, 12)
+                .join(", ")}${headers.length > 12 ? "…" : ""}`,
+              rowsUsed: 0,
+            }));
+          }
+          return;
+        }
+
+        const byDay = {}; // { "YYYY-MM-DD": number }
+        let used = 0;
+
+        for (const r of rows) {
+          // Prefer DONE rows if status exists
+          if (statusCol) {
+            const st = String(r[statusCol] || "")
+              .toUpperCase()
+              .trim();
+            if (st && st !== "DONE") continue;
+          }
+
+          const finishedIso = String(r[finishedCol] || "").trim();
+          const ymd = ymdFromIsoInAnalyticsTz(finishedIso);
+          if (!ymd) continue;
+
+          const partySize = numOr0(r[partyCol]);
+          if (partySize <= 0) continue;
+
+          byDay[ymd] = (byDay[ymd] || 0) + partySize;
+          used++;
+        }
+
+        if (!cancelled) {
+          setCsvPeopleByDay(byDay);
+          setCsvPeopleInfo((s) => ({
+            ...s,
+            loading: false,
+            error: "",
+            rowsUsed: used,
+          }));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setCsvPeopleByDay({});
+          setCsvPeopleInfo((s) => ({
+            ...s,
+            loading: false,
+            error: e?.message || "Failed to compute people/day from CSV",
+            rowsUsed: 0,
+          }));
+        }
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [data, csvHref]);
 
   return (
     <main className="container">
@@ -557,30 +794,30 @@ export default function AnalyticsPage() {
               <Kpi
                 label="Total groups"
                 value={fmtNum(totals.total_entries)}
-                sub="Groups in selected range"
+                sub="DONE groups in selected range"
               />
               <Kpi
                 label="Total people"
                 value={fmtNum(totals.total_people)}
-                sub={`Avg party: ${fmtNum(totals.avg_party_size, 1)}`}
+                sub={`Avg party (DONE): ${fmtNum(totals.avg_party_size, 1)}`}
               />
               <Kpi
-                label="Wait (sent→start)"
+                label="Wait (created→sent)"
                 value={fmtSecs(totals.avg_wait_seconds)}
-                sub={`P50: ${fmtSecs(totals.p50_wait_seconds)} • P90: ${fmtSecs(
-                  totals.p90_wait_seconds,
-                )}`}
+                sub={`Avg wait • P50: ${fmtSecs(
+                  totals.p50_wait_seconds,
+                )} • P90: ${fmtSecs(totals.p90_wait_seconds)}`}
               />
               <Kpi
                 label="Duration (start→finish)"
                 value={fmtSecs(totals.avg_duration_seconds)}
-                sub={`P50: ${fmtSecs(
+                sub={`Avg duration • P50: ${fmtSecs(
                   totals.p50_duration_seconds,
                 )} • P90: ${fmtSecs(totals.p90_duration_seconds)}`}
               />
             </div>
 
-            {/* GRID AREA 1: Daily trend alone */}
+            {/* Daily trend */}
             <div
               style={{
                 display: "grid",
@@ -591,7 +828,7 @@ export default function AnalyticsPage() {
             >
               <Card
                 title="Daily trend"
-                subtitle="Finished groups per day (visual)"
+                subtitle="Finished DONE groups per day"
                 right={
                   <span className="pill">
                     Showing {Math.min(21, trendChart.length)} days
@@ -613,7 +850,7 @@ export default function AnalyticsPage() {
                       />
                       <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
                       <Tooltip
-                        formatter={(v) => [`${v} groups`, "Finished"]}
+                        formatter={(v) => [`${v} groups`, "DONE Finished"]}
                         labelFormatter={(l) => `Day: ${l}`}
                       />
                       <Area
@@ -631,24 +868,49 @@ export default function AnalyticsPage() {
                   style={{ gap: 10, flexWrap: "wrap", marginTop: 10 }}
                 >
                   <span className="pill">
-                    Busiest day:{" "}
-                    <strong>{busiestDow ? DOW[busiestDow.dow] : "—"}</strong>{" "}
-                    {busiestDow ? `(${busiestDow.entries})` : ""}
+                    Busiest day (groups):{" "}
+                    <strong>
+                      {busiestDayGroups?.day_bucket
+                        ? fmtDayFull(busiestDayGroups.day_bucket)
+                        : busiestDow
+                          ? DOW[busiestDow.dow]
+                          : "—"}
+                    </strong>{" "}
+                    {busiestDayGroups
+                      ? `(${fmtNum(busiestDayGroups.entries)} groups)`
+                      : busiestDow
+                        ? `(${fmtNum(busiestDow.entries)} groups)`
+                        : ""}
                   </span>
+
                   <span className="pill">
-                    Busiest hour:{" "}
+                    Busiest day (people):{" "}
+                    <strong>
+                      {busiestDayPeople?.day_bucket
+                        ? fmtDayFull(busiestDayPeople.day_bucket)
+                        : "—"}
+                    </strong>{" "}
+                    {busiestDayPeople
+                      ? `(${fmtNum(busiestDayPeople.people)} people)`
+                      : ""}
+                  </span>
+
+                  <span className="pill">
+                    Busiest hour (groups):{" "}
                     <strong>
                       {busiestHour?.hour_bucket
                         ? fmtHourBucket(busiestHour.hour_bucket)
                         : "—"}
                     </strong>{" "}
-                    {busiestHour ? `(${busiestHour.entries})` : ""}
+                    {busiestHour
+                      ? `(${fmtNum(busiestHour.entries)} groups)`
+                      : ""}
                   </span>
                 </div>
               </Card>
             </div>
 
-            {/* GRID AREA 2: next 2 (DOW + Operational) */}
+            {/* Day-of-week + Operational */}
             <div
               style={{
                 display: "grid",
@@ -659,7 +921,7 @@ export default function AnalyticsPage() {
             >
               <Card
                 title="Day-of-week volume"
-                subtitle="Where demand concentrates"
+                subtitle="DONE finished groups by weekday"
                 style={{ minHeight: 360 }}
               >
                 <div style={{ height: 270 }}>
@@ -671,19 +933,19 @@ export default function AnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
                       <XAxis dataKey="dow" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-                      <Tooltip formatter={(v) => [`${v} groups`, "Finished"]} />
+                      <Tooltip formatter={(v) => [`${v} groups`, "DONE"]} />
                       <Bar dataKey="entries" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                  Shows finished groups by weekday (range-based).
+                  Rendered in {ANALYTICS_TZ}.
                 </div>
               </Card>
 
               <Card
                 title="Operational summary"
-                subtitle="Throughput + outcomes (quick read)"
+                subtitle="Throughput + outcomes"
                 style={{ minHeight: 360 }}
                 right={<span className="pill">{opsSummary.dayCount} days</span>}
               >
@@ -782,16 +1044,14 @@ export default function AnalyticsPage() {
                     className="muted"
                     style={{ fontSize: 12, lineHeight: 1.45 }}
                   >
-                    Note: if there’s less history than the selected range,
-                    per-day averages are calculated as{" "}
-                    <strong>groups ÷ days of available data</strong>, so they
-                    may be slightly skewed early on.
+                    Note: per-day averages are calculated as{" "}
+                    <strong>DONE groups ÷ days shown</strong>.
                   </div>
                 </div>
               </Card>
             </div>
 
-            {/* GRID AREA 3: next 2 (Status + Key/Definitions) */}
+            {/* Status + Definitions */}
             <div
               style={{
                 display: "grid",
@@ -802,7 +1062,7 @@ export default function AnalyticsPage() {
             >
               <Card
                 title="Status breakdown"
-                subtitle="Distribution in history"
+                subtitle="All statuses in selected range"
                 style={{ minHeight: 360 }}
               >
                 <div style={{ height: 270 }}>
@@ -849,47 +1109,37 @@ export default function AnalyticsPage() {
                     className="item"
                     style={{ padding: 12, borderRadius: 14 }}
                   >
-                    <div style={{ fontWeight: 900 }}>P50 (Median)</div>
+                    <div style={{ fontWeight: 900 }}>Wait (created→sent)</div>
                     <div
                       className="muted"
                       style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45 }}
                     >
-                      Half of groups are under this value, half are above it.
-                    </div>
-                  </div>
-
-                  <div
-                    className="item"
-                    style={{ padding: 12, borderRadius: 14 }}
-                  >
-                    <div style={{ fontWeight: 900 }}>P90</div>
-                    <div
-                      className="muted"
-                      style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45 }}
-                    >
-                      90% of groups are under this value. The slowest ~10% are
-                      above it.
-                    </div>
-                  </div>
-
-                  <div
-                    className="item"
-                    style={{ padding: 12, borderRadius: 14 }}
-                  >
-                    <div style={{ fontWeight: 900 }}>Wait vs Duration</div>
-                    <div
-                      className="muted"
-                      style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45 }}
-                    >
-                      <strong>Wait</strong> = Created at → Start Time
+                      The big number is the <strong>average</strong> wait time
+                      for DONE rows in the window (Created → Sent Up).
                       <br />
-                      <strong>Duration</strong> = Start time → Finished At
+                      P50 is the median. P90 is the “bad day” planning number.
+                    </div>
+                  </div>
+
+                  <div
+                    className="item"
+                    style={{ padding: 12, borderRadius: 14 }}
+                  >
+                    <div style={{ fontWeight: 900 }}>
+                      Duration (start→finish)
+                    </div>
+                    <div
+                      className="muted"
+                      style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45 }}
+                    >
+                      Start time → Finished at (DONE rows in window).
                     </div>
                   </div>
                 </div>
               </Card>
             </div>
 
+            {/* Top Hours + Top Tags */}
             <div
               style={{
                 display: "grid",
@@ -900,25 +1150,22 @@ export default function AnalyticsPage() {
               }}
             >
               {(() => {
-                const hours = Array.isArray(topHours) ? topHours : [];
-                const tags = Array.isArray(tagBreakdown) ? tagBreakdown : [];
-
                 const total = Math.max(0, Number(totalEntries || 0));
 
-                const hoursShown = hours.reduce(
+                const hoursShown = topHours.reduce(
                   (a, x) => a + Number(x?.entries || 0),
                   0,
                 );
                 const otherHours = Math.max(0, total - hoursShown);
 
-                const tagsShown = tags.reduce(
+                const tagsShown = tagBreakdown.reduce(
                   (a, x) => a + Number(x?.entries || 0),
                   0,
                 );
                 const otherTags = Math.max(0, total - tagsShown);
 
                 const hourRows = [
-                  ...hours.map((h) => ({
+                  ...topHours.map((h) => ({
                     label: fmtHourBucket(h.hour_bucket),
                     count: Number(h?.entries || 0),
                     kind: "row",
@@ -935,7 +1182,7 @@ export default function AnalyticsPage() {
                 ];
 
                 const tagRows = [
-                  ...tags.map((t) => ({
+                  ...tagBreakdown.map((t) => ({
                     label: String(t?.tag || ""),
                     count: Number(t?.entries || 0),
                     kind: "row",
@@ -958,7 +1205,6 @@ export default function AnalyticsPage() {
                 function GridList({ rows }) {
                   return (
                     <div style={{ width: "100%" }}>
-                      {/* header */}
                       <div
                         className="muted"
                         style={{
@@ -976,7 +1222,6 @@ export default function AnalyticsPage() {
                         <div style={{ textAlign: "right" }}>% of Total</div>
                       </div>
 
-                      {/* rows */}
                       <div style={{ width: "100%" }}>
                         {rows.map((r, idx) => (
                           <div
@@ -1031,7 +1276,7 @@ export default function AnalyticsPage() {
                   <>
                     <Card
                       title="Top hours"
-                      subtitle="Hours with the most finished groups"
+                      subtitle="Hours with the most DONE finished groups"
                       right={
                         <span className="pill">
                           Total: {fmtNum(total)} groups
@@ -1048,14 +1293,14 @@ export default function AnalyticsPage() {
                           padding: "0 2px",
                         }}
                       >
-                        Showing {fmtNum(hours.length)} busiest hours +{" "}
+                        Showing {fmtNum(topHours.length)} busiest hours +{" "}
                         <strong>Other</strong>. Table adds up to the full total.
                       </div>
                     </Card>
 
                     <Card
                       title="Top tags"
-                      subtitle="Most used assigned tags"
+                      subtitle="Most used assigned tags (DONE groups)"
                       right={
                         <span className="pill">
                           Total: {fmtNum(total)} groups
@@ -1072,7 +1317,7 @@ export default function AnalyticsPage() {
                           padding: "0 2px",
                         }}
                       >
-                        Showing {fmtNum(tags.length)} top tags +{" "}
+                        Showing {fmtNum(tagBreakdown.length)} top tags +{" "}
                         <strong>Other / Untagged</strong>. Table adds up to the
                         full total.
                       </div>
