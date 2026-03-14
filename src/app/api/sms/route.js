@@ -8,6 +8,8 @@ import {
   STAFF_COOKIE_NAME,
 } from "@/app/lib/staffWallAuth";
 
+export const runtime = "nodejs";
+
 function toE164US(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
   if (!digits) return null;
@@ -20,18 +22,20 @@ async function requireStaff() {
   const secret = process.env.STAFF_WALL_COOKIE_SECRET || "";
   if (!secret) return false;
 
-  const cookieVal = cookies().get(STAFF_COOKIE_NAME)?.value;
+  const cookieStore = await cookies();
+  const cookieVal = cookieStore.get(STAFF_COOKIE_NAME)?.value;
+
   return await verifyStaffCookieValue(cookieVal, secret);
 }
 
 export async function POST(req) {
   try {
-    //   Staff-only guard (defense in depth)
+    // Staff-only guard (defense in depth)
     const authed = await requireStaff();
     if (!authed) {
       return Response.json(
         { ok: false, error: "Unauthorized" },
-        { status: 401 },
+        { status: 401 }
       );
     }
 
@@ -41,7 +45,7 @@ export async function POST(req) {
     if (!toE164) {
       return Response.json(
         { ok: false, error: "Invalid phone number." },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -49,7 +53,7 @@ export async function POST(req) {
     if (!body) {
       return Response.json(
         { ok: false, error: "Message is required." },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -59,7 +63,7 @@ export async function POST(req) {
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
       return Response.json(
         { ok: false, error: "Twilio env vars missing." },
-        { status: 500 },
+        { status: 500 }
       );
     }
 
@@ -75,7 +79,7 @@ export async function POST(req) {
   } catch (err) {
     return Response.json(
       { ok: false, error: err?.message || "Failed to send SMS." },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
