@@ -1,10 +1,32 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import Modal from "./Modal";
 import ConfirmDangerModal from "./ConfirmDangerModal";
 import { formatPhoneForTel, minutesFromNow } from "@/app/lib/ropesUtils";
 import { LIMITS, clampInt, clampText } from "@/app/lib/ropesStore";
+
+function formatPhoneUS(input) {
+  if (!input) return "";
+
+  let digits = String(input).replace(/\D/g, "");
+
+  if (digits.length > 10 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+
+  digits = digits.slice(0, 10);
+
+  const len = digits.length;
+
+  if (len === 0) return "";
+  if (len < 4) return digits;
+  if (len < 7) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  }
+
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 function computeMinutesRemaining(endTime) {
   if (!endTime) return 0;
@@ -21,7 +43,6 @@ export default function EditEntryModal({
   onRemove,
   onComplete,
 }) {
-  //   Always define a safeEntry FIRST so hooks are never conditional
   const safeEntry = entry ?? {
     id: "__none__",
     status: "WAITING",
@@ -68,7 +89,6 @@ export default function EditEntryModal({
   const [removeToken, setRemoveToken] = useState(0);
   const [completeToken, setCompleteToken] = useState(0);
 
-  //   AFTER hooks, you can safely bail out
   if (!entry) return null;
 
   function save() {
@@ -80,10 +100,8 @@ export default function EditEntryModal({
 
     const phone = clampText(draft.phone, LIMITS.entryPhone).trim();
     const notes = clampText(draft.notes, LIMITS.entryIntakeNotes).trim();
-
     const partySize = clampInt(draft.partySize || 1, 1, totalLines);
 
-    // 🔒 FORCE equality. Always.
     const updated = {
       ...entry,
       name,
@@ -149,10 +167,12 @@ export default function EditEntryModal({
                 value={draft.partySize}
                 onChange={(e) => {
                   const raw = e.target.value;
+
                   if (raw === "") {
                     setDraft((d) => ({ ...d, partySize: "" }));
                     return;
                   }
+
                   setDraft((d) => ({
                     ...d,
                     partySize: clampInt(raw, 1, totalLines),
@@ -183,17 +203,19 @@ export default function EditEntryModal({
               <span className="field-label">Phone</span>
               <input
                 className="input"
-                value={draft.phone}
-                maxLength={LIMITS.entryPhone}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    phone: clampText(e.target.value, LIMITS.entryPhone),
-                  }))
-                }
-                placeholder="801-555-1234"
+                type="tel"
                 inputMode="tel"
                 autoComplete="tel"
+                value={draft.phone}
+                maxLength={LIMITS.entryPhone}
+                onChange={(e) => {
+                  const formatted = formatPhoneUS(e.target.value);
+                  setDraft((d) => ({
+                    ...d,
+                    phone: clampText(formatted, LIMITS.entryPhone),
+                  }));
+                }}
+                placeholder="(801) 555-1234"
               />
             </label>
 
@@ -265,6 +287,7 @@ export default function EditEntryModal({
             >
               Save changes
             </button>
+
             <button className="button" type="button" onClick={onClose}>
               Cancel
             </button>
