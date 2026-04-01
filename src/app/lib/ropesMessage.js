@@ -6,6 +6,6 @@ Please check in with the front desk!
 
 Estimated start: ${estStartText}
 
-* Please check in at the front within 5 minutes, or your spot will go to the next in line.
+* Please check in at the front desk within 5 minutes to keep your spot. If you need more time, please call this number to adjust your start time.
 `;
 }
