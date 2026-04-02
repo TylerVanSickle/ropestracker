@@ -18,7 +18,6 @@ export default function WaitingList({
   totalLines,
   leadModeActive,
   estimateMap,
-  notifyTimerMap = {},
   onEdit,
   onMoveUp,
   onMoveDown,
@@ -76,7 +75,9 @@ export default function WaitingList({
             const waitRange =
               est?.estWaitMin != null ? getWaitRangeText(est.estWaitMin) : "—";
 
-            const notifyTs = notifyTimerMap[e.id] ?? 0;
+            const notifyTs = e.lastNotifiedAt
+              ? new Date(e.lastNotifiedAt).getTime()
+              : 0;
             const notifySecondsLeft =
               notifyTs && !leadModeActive
                 ? Math.max(

@@ -227,6 +227,9 @@ function toDbPatchFromUi(patch) {
   if ("endTime" in p) out.end_time = p.endTime ?? null;
   if ("endedEarlyAt" in p) out.ended_early_at = p.endedEarlyAt ?? null;
 
+  if ("lastNotifiedAt" in p) out.last_notified_at = p.lastNotifiedAt ?? null;
+  if ("notifiedCount" in p) out.notified_count = p.notifiedCount ?? null;
+
   return out;
 }
 
@@ -352,10 +355,10 @@ export default function Home() {
   const [leadPinInput, setLeadPinInput] = useState("");
   const [leadPinOpen, setLeadPinOpen] = useState(false);
 
-  // Notify 5-min timer: { [entryId]: timestampMs when notified }
-  const [notifyTimerMap, setNotifyTimerMap] = useState({});
-  // Alerts shown when a notify timer expires
+  // Alerts shown when a notify timer expires (cleared by staff)
   const [expiredNotifyAlerts, setExpiredNotifyAlerts] = useState([]);
+  // Tracks which lastNotifiedAt timestamps have already been handled (avoid re-firing)
+  const notifyExpiredHandledRef = useRef({});
 
   const refreshFromLocal = () => {
     setSettings(loadSettings());
@@ -607,7 +610,10 @@ export default function Home() {
       !Boolean(settings.flowPaused)
     : false;
 
-  const nextNotifyTs = nextWaiting ? (notifyTimerMap[nextWaiting.id] ?? 0) : 0;
+  const nextNotifyTs =
+    nextWaiting?.lastNotifiedAt
+      ? new Date(nextWaiting.lastNotifiedAt).getTime()
+      : 0;
   const nextNotifySecondsLeft =
     nextNotifyTs && !leadModeActive
       ? Math.max(
@@ -730,7 +736,24 @@ export default function Home() {
     if (!entry.phone) {
       const ok = await copyToClipboard(msg);
       alert(ok ? "Message copied to clipboard." : "Could not copy message.");
-      if (ok) setNotifyTimerMap((prev) => ({ ...prev, [entry.id]: Date.now() }));
+      if (ok) {
+        const nowISO = new Date().toISOString();
+        const newCount = (entry.notifiedCount || 0) + 1;
+        setEntries((prev) =>
+          prev.map((e) =>
+            String(e.id) !== String(entry.id)
+              ? e
+              : { ...e, lastNotifiedAt: nowISO, notifiedCount: newCount },
+          ),
+        );
+        statePut({
+          op: "PATCH_ENTRY",
+          payload: {
+            id: entry.id,
+            patch: toDbPatchFromUi({ lastNotifiedAt: nowISO, notifiedCount: newCount }),
+          },
+        }).catch(() => {});
+      }
       return;
     }
 
@@ -738,19 +761,22 @@ export default function Home() {
       setNotifyBusyId(entry.id);
       await sendSms({ to: entry.phone, message: msg });
 
+      const nowISO = new Date().toISOString();
+      const newCount = (entry.notifiedCount || 0) + 1;
       setEntries((prev) =>
         prev.map((e) =>
           String(e.id) !== String(entry.id)
             ? e
-            : {
-                ...e,
-                lastNotifiedAt: new Date().toISOString(),
-                notifiedCount: (e.notifiedCount || 0) + 1,
-              },
+            : { ...e, lastNotifiedAt: nowISO, notifiedCount: newCount },
         ),
       );
-
-      setNotifyTimerMap((prev) => ({ ...prev, [entry.id]: Date.now() }));
+      statePut({
+        op: "PATCH_ENTRY",
+        payload: {
+          id: entry.id,
+          patch: toDbPatchFromUi({ lastNotifiedAt: nowISO, notifiedCount: newCount }),
+        },
+      }).catch(() => {});
       fireToast("Text sent", "success");
     } catch (e) {
       const err = String(e?.message || "");
@@ -1066,34 +1092,26 @@ export default function Home() {
     }
   }
 
-  // Notify expiry — after 5 min with no response, move group to end of line
+  // Notify expiry — after 5 min with no response, move group down one spot
   useEffect(() => {
     const nowMs = now.getTime();
-    const expired = Object.entries(notifyTimerMap).filter(
-      ([, ts]) => nowMs - ts >= NOTIFY_TIMEOUT_MS,
-    );
-    if (expired.length === 0) return;
+    waiting.forEach((entry) => {
+      if (!entry.lastNotifiedAt) return;
+      const ts = new Date(entry.lastNotifiedAt).getTime();
+      if (!ts || Number.isNaN(ts)) return;
+      if (nowMs - ts < NOTIFY_TIMEOUT_MS) return; // not expired yet
 
-    setNotifyTimerMap((prev) => {
-      const next = { ...prev };
-      expired.forEach(([id]) => delete next[id]);
-      return next;
-    });
+      const lastHandled = notifyExpiredHandledRef.current[entry.id] ?? 0;
+      if (lastHandled >= ts) return; // already handled this notification round
 
-    expired.forEach(([id]) => {
-      const entry = entriesRef.current.find(
-        (e) =>
-          String(e.id) === String(id) &&
-          String(e.status || "").toUpperCase() === "WAITING",
+      notifyExpiredHandledRef.current[entry.id] = ts;
+
+      setExpiredNotifyAlerts((prev) =>
+        prev.find((a) => a.id === entry.id && a.ts === ts)
+          ? prev
+          : [...prev, { id: entry.id, name: entry.name, ts }],
       );
-      if (entry) {
-        setExpiredNotifyAlerts((prev) =>
-          prev.find((a) => a.id === id)
-            ? prev
-            : [...prev, { id, name: entry.name }],
-        );
-        moveWaiting(id, "DOWN");
-      }
+      moveWaiting(entry.id, "DOWN");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now]);
@@ -1393,7 +1411,6 @@ export default function Home() {
           totalLines={settings.totalLines}
           leadModeActive={leadModeActive}
           estimateMap={estimateMap}
-          notifyTimerMap={notifyTimerMap}
           onEdit={(id) => setEditingId(id)}
           onMoveUp={(id) => moveWaiting(id, "UP")}
           onMoveDown={(id) => moveWaiting(id, "DOWN")}
