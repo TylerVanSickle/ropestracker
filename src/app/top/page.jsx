@@ -499,7 +499,9 @@ export default function TopRopesPage() {
     setEditingId(entry.id);
     setEditDraft({
       name: String(entry.name ?? ""),
-      partySize: String(entry.partySize ?? ""),
+      // Show linesUsed (operational count) not partySize (registered count)
+      // so analytics always keeps the original registered party size
+      partySize: String(entry.linesUsed ?? entry.partySize ?? ""),
       phone: String(entry.phone ?? ""),
       notes: String(entry.notes ?? ""),
     });
@@ -516,9 +518,9 @@ export default function TopRopesPage() {
     const name = String(editDraft.name || "")
       .trim()
       .slice(0, 40);
-    const partySizeNum = Math.max(
+    const linesUsedNum = Math.max(
       1,
-      Math.min(15, Number(editDraft.partySize || 1)),
+      Math.min(20, Number(editDraft.partySize || 1)),
     );
     const phone = String(editDraft.phone || "")
       .trim()
@@ -527,10 +529,11 @@ export default function TopRopesPage() {
       .trim()
       .slice(0, 120);
 
+    // Only update linesUsed — never overwrite partySize so analytics always
+    // records the original registered group size, not an operational adjustment
     await patchEntryRemote(editingId, {
       name,
-      partySize: partySizeNum,
-      linesUsed: partySizeNum,
+      linesUsed: linesUsedNum,
       phone,
       notes,
     });

@@ -12,6 +12,20 @@ import {
 import AlertToast from "@/app/components/ropes/AlertToast";
 import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 
+const LS_LEAD_PIN = "ropes_lead_pin_v1";
+function loadLeadPin() {
+  try {
+    return localStorage.getItem(LS_LEAD_PIN) || "";
+  } catch {
+    return "";
+  }
+}
+function saveLeadPin(pin) {
+  try {
+    localStorage.setItem(LS_LEAD_PIN, pin);
+  } catch {}
+}
+
 async function stateGet() {
   const res = await fetch("/api/state", {
     method: "GET",
@@ -56,6 +70,31 @@ function mapDbSettings(db) {
 export default function SettingsPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
+
+  // Lead PIN — stored locally only, not synced to DB
+  const [leadPin, setLeadPin] = useState("");
+  const [leadPinSaved, setLeadPinSaved] = useState(false);
+  useEffect(() => {
+    setLeadPin(loadLeadPin());
+  }, []);
+
+  // Staff view theme — stored locally only, applies via html class
+  const [staffTheme, setStaffTheme] = useState("auto");
+  useEffect(() => {
+    try {
+      setStaffTheme(localStorage.getItem("ropes_staff_theme") || "auto");
+    } catch {}
+  }, []);
+
+  function applyStaffTheme(value) {
+    setStaffTheme(value);
+    try {
+      localStorage.setItem("ropes_staff_theme", value);
+    } catch {}
+    document.documentElement.classList.remove("dark", "light");
+    if (value === "dark") document.documentElement.classList.add("dark");
+    else if (value === "light") document.documentElement.classList.add("light");
+  }
 
   // Toast (with tone)
   const [toastKey, setToastKey] = useState(0);
@@ -343,21 +382,39 @@ export default function SettingsPage() {
             </p>
           </label>
 
-          <label className="field">
-            <span className="field-label">Client display theme</span>
-            <select
-              className="input"
-              value={settings.clientTheme ?? "auto"}
-              onChange={(e) => updateClientTheme(e.target.value)}
-            >
-              <option value="auto">Auto (match device)</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-            <p className="muted helper">
-              This only affects the public /client screen (not the staff view).
-            </p>
-          </label>
+          <div className="form-row form-row-2">
+            <label className="field">
+              <span className="field-label">Client display theme</span>
+              <select
+                className="input"
+                value={settings.clientTheme ?? "auto"}
+                onChange={(e) => updateClientTheme(e.target.value)}
+              >
+                <option value="auto">Auto (match device)</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+              <p className="muted helper">
+                Affects the public /client screen only.
+              </p>
+            </label>
+
+            <label className="field">
+              <span className="field-label">Staff view theme</span>
+              <select
+                className="input"
+                value={staffTheme}
+                onChange={(e) => applyStaffTheme(e.target.value)}
+              >
+                <option value="auto">Auto (match device)</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+              <p className="muted helper">
+                Affects the staff pages. Saved to this device only.
+              </p>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -458,6 +515,62 @@ export default function SettingsPage() {
             Tip: Public screen: <strong>/client</strong> • Print sheet:{" "}
             <strong>/print</strong>
           </p>
+        </div>
+      </div>
+
+      <div className="card spacer-md">
+        <h2 className="section-title">Lead / Overdrive PIN</h2>
+        <div className="guest-form spacer-sm">
+          <label className="field">
+            <span className="field-label">Lead PIN (up to 4 digits)</span>
+            <input
+              className="input"
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={leadPin}
+              onChange={(e) =>
+                setLeadPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              placeholder="e.g. 1234"
+              autoComplete="off"
+            />
+            <p className="muted helper">
+              Managers enter this PIN on the main page to allow party sizes up to
+              20 (overdrive). Leave blank to disable lead mode.
+            </p>
+          </label>
+
+          <div className="row">
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => {
+                saveLeadPin(leadPin);
+                setLeadPinSaved(true);
+                setTimeout(() => setLeadPinSaved(false), 1500);
+              }}
+            >
+              Save PIN
+            </button>
+            {leadPin ? (
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  setLeadPin("");
+                  saveLeadPin("");
+                }}
+              >
+                Clear PIN
+              </button>
+            ) : null}
+            {leadPinSaved ? (
+              <span className="muted helper" style={{ alignSelf: "center" }}>
+                Saved ✅
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 

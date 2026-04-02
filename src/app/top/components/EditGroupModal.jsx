@@ -58,7 +58,7 @@ export default function EditGroupModal({
 
             <div style={{ width: 180 }}>
               <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
-                Lines (party size)
+                Lines in use
               </div>
               <input
                 className="input"

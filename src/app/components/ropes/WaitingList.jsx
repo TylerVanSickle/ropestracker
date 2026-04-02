@@ -7,6 +7,8 @@ import { formatPhoneForTel, getWaitRangeText } from "@/app/lib/ropesUtils";
 export default function WaitingList({
   waiting,
   availableLines,
+  totalLines,
+  leadModeActive,
   estimateMap,
   onEdit,
   onMoveUp,
@@ -50,11 +52,11 @@ export default function WaitingList({
             const needs = Math.max(1, Number(e.partySize || 1));
             const isFront = idx === 0;
 
-            const canSendUp = isFront && availableLines >= needs;
+            const canSendUp = isFront && (leadModeActive || availableLines >= needs);
 
             const reason = !isFront
               ? "Can’t skip the line"
-              : availableLines < needs
+              : availableLines < needs && !leadModeActive
                 ? `Needs ${needs}, only ${availableLines} available`
                 : "";
 

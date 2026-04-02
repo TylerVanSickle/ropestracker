@@ -19,6 +19,11 @@ export default function Topbar({
   //   reservations popup
   onOpenReservations,
   reservationsCount = 0,
+
+  // Lead / overdrive mode
+  leadModeActive = false,
+  onLeadMode,
+  onLeadModeOff,
 }) {
   const [clearOpen, setClearOpen] = useState(false);
   const [clearModalKey, setClearModalKey] = useState(0);
@@ -105,6 +110,26 @@ export default function Topbar({
           >
             Clear list
           </button>
+
+          {leadModeActive ? (
+            <button
+              className="button button-warning"
+              type="button"
+              onClick={onLeadModeOff}
+              title="Lead mode active — click to disable"
+            >
+              Lead ON ✕
+            </button>
+          ) : (
+            <button
+              className="button"
+              type="button"
+              onClick={onLeadMode}
+              title="Enable lead/overdrive mode"
+            >
+              Lead Mode
+            </button>
+          )}
 
           <Link className="button" href="/settings">
             Settings

@@ -29,6 +29,7 @@ import UpNowList from "@/app/components/ropes/UpNowList";
 import WaitlingList from "@/app/components/ropes/WaitingList";
 import EditEntryModal from "@/app/components/ropes/EditEntryModal";
 import NextUpActions from "@/app/components/ropes/NextUpActions";
+import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 
 import {
   buildSmsHref,
@@ -50,6 +51,16 @@ import AlertToast from "@/app/components/ropes/AlertToast";
 import ReservationsPopup from "@/app/components/ropes/ReservationsPopup";
 
 const FALLBACK_REFRESH_MS = 15000; // fallback only (Realtime should handle instant)
+
+// ---------- Lead PIN (local-only, not synced to DB) ----------
+const LS_LEAD_PIN = "ropes_lead_pin_v1";
+function loadLeadPin() {
+  try {
+    return localStorage.getItem(LS_LEAD_PIN) || "";
+  } catch {
+    return "";
+  }
+}
 
 // ---------- helpers ----------
 function isPinValid(input, pin) {
@@ -332,6 +343,14 @@ export default function Home() {
 
   const [notifyBusyId, setNotifyBusyId] = useState(null);
 
+  // Notify confirmation
+  const [confirmNotifyEntry, setConfirmNotifyEntry] = useState(null);
+
+  // Lead / Overdrive mode
+  const [leadModeActive, setLeadModeActive] = useState(false);
+  const [leadPinInput, setLeadPinInput] = useState("");
+  const [leadPinOpen, setLeadPinOpen] = useState(false);
+
   const refreshFromLocal = () => {
     setSettings(loadSettings());
     setEntries(ensureQueueOrderList(loadEntries()));
@@ -578,7 +597,8 @@ export default function Home() {
     : null;
 
   const nextCanStartNow = nextWaiting
-    ? availableLines >= nextNeeds && !Boolean(settings.flowPaused)
+    ? (leadModeActive || availableLines >= nextNeeds) &&
+      !Boolean(settings.flowPaused)
     : false;
 
   const estimateMap = useMemo(() => {
@@ -753,7 +773,7 @@ export default function Home() {
       const phone = clampText(newGuest.phone, LIMITS.entryPhone).trim();
       const notes = clampText(newGuest.notes, LIMITS.entryIntakeNotes).trim();
 
-      const maxLines = clampInt(settings.totalLines, 1, 15);
+      const maxLines = clampInt(settings.totalLines, 1, leadModeActive ? 20 : 15);
       const partySize = clampInt(newGuest.partySize || 1, 1, maxLines);
 
       // IMPORTANT: must be UUID if we send it to DB
@@ -849,13 +869,7 @@ export default function Home() {
     const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
     const linesNeeded = Math.max(1, Number(front.partySize || 1));
 
-    if (linesNeeded > settings.totalLines) {
-      alert(
-        `This party needs ${linesNeeded} lines, but total available is ${settings.totalLines}.`,
-      );
-      return;
-    }
-    if (linesNeeded > availablePrev) {
+    if (!leadModeActive && linesNeeded > availablePrev) {
       alert(
         `Not enough sling lines available. Available: ${availablePrev}, needed: ${linesNeeded}.`,
       );
@@ -1151,6 +1165,26 @@ export default function Home() {
     window.open("/print", "_blank", "noopener,noreferrer");
   }
 
+  function tryActivateLead(e) {
+    e.preventDefault();
+    const storedPin = loadLeadPin();
+    if (!storedPin) {
+      fireToast("No lead PIN set. Configure one in Settings.", "warning");
+      setLeadPinOpen(false);
+      setLeadPinInput("");
+      return;
+    }
+    if (isPinValid(leadPinInput, storedPin)) {
+      setLeadModeActive(true);
+      setLeadPinOpen(false);
+      setLeadPinInput("");
+      fireToast("Lead mode active — up to 20 guests allowed", "success");
+    } else {
+      alert("Wrong lead PIN.");
+      setLeadPinInput("");
+    }
+  }
+
   const staffPin = String(settings.staffPin || "").trim();
   const requiresPin = !!staffPin;
 
@@ -1228,6 +1262,9 @@ export default function Home() {
         onOpenPrint={openPrint}
         onOpenReservations={() => setReservationsOpen(true)}
         reservationsCount={reservationsCount}
+        leadModeActive={leadModeActive}
+        onLeadMode={() => setLeadPinOpen(true)}
+        onLeadModeOff={() => setLeadModeActive(false)}
       />
 
       <FlowPausedBanner settings={settings} />
@@ -1239,7 +1276,7 @@ export default function Home() {
           nextEstStartText={nextEstStartText}
           nextWaitRange={nextWaitRange}
           canStartNow={nextCanStartNow}
-          onNotify={() => (nextWaiting ? notifyGuest(nextWaiting) : null)}
+          onNotify={() => (nextWaiting ? setConfirmNotifyEntry(nextWaiting) : null)}
           onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
           onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
           onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
@@ -1258,17 +1295,20 @@ export default function Home() {
         newGuest={newGuest}
         setNewGuest={setNewGuest}
         onAddGuest={addGuest}
+        overdriveMax={leadModeActive ? 20 : undefined}
       />
 
       <section className="grid-2 spacer-md">
         <WaitlingList
           waiting={waiting}
           availableLines={availableLines}
+          totalLines={settings.totalLines}
+          leadModeActive={leadModeActive}
           estimateMap={estimateMap}
           onEdit={(id) => setEditingId(id)}
           onMoveUp={(id) => moveWaiting(id, "UP")}
           onMoveDown={(id) => moveWaiting(id, "DOWN")}
-          onNotify={(entry) => notifyGuest(entry)}
+          onNotify={(entry) => setConfirmNotifyEntry(entry)}
           onStart={startGroup}
           onRemove={remove}
         />
@@ -1287,6 +1327,7 @@ export default function Home() {
         <EditEntryModal
           entry={editingEntry}
           settings={settings}
+          overdriveMax={leadModeActive ? 20 : undefined}
           onClose={() => setEditingId(null)}
           onSave={saveEdit}
           onRemove={remove}
@@ -1301,6 +1342,97 @@ export default function Home() {
         setEntries={setEntries}
         nowMs={now.getTime()}
       />
+
+      <ConfirmModal
+        open={confirmNotifyEntry !== null}
+        title="Send notification?"
+        message={
+          confirmNotifyEntry
+            ? `Send a text message to ${confirmNotifyEntry.name}?`
+            : ""
+        }
+        confirmText="Send"
+        cancelText="Cancel"
+        tone="primary"
+        onClose={() => setConfirmNotifyEntry(null)}
+        onConfirm={() => {
+          const e = confirmNotifyEntry;
+          setConfirmNotifyEntry(null);
+          notifyGuest(e);
+        }}
+      />
+
+      {leadPinOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 14,
+            zIndex: 9999,
+          }}
+          onClick={() => {
+            setLeadPinOpen(false);
+            setLeadPinInput("");
+          }}
+        >
+          <div
+            className="card"
+            style={{ width: "min(400px, 100%)", padding: 16 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="section-title" style={{ marginTop: 0 }}>
+              Lead Mode
+            </h2>
+            <p className="muted helper">
+              Enter the lead PIN to allow overdrive — party sizes up to 15.
+            </p>
+            <form
+              className="guest-form spacer-sm"
+              onSubmit={tryActivateLead}
+            >
+              <label className="field">
+                <span className="field-label">Lead PIN</span>
+                <input
+                  className="input"
+                  value={leadPinInput}
+                  onChange={(e) =>
+                    setLeadPinInput(
+                      digitsOnlyMax(e.target.value, LIMITS.staffPinMaxDigits),
+                    )
+                  }
+                  inputMode="numeric"
+                  autoFocus
+                  autoComplete="off"
+                />
+              </label>
+              <div className="row">
+                <button
+                  className="button button-primary"
+                  type="submit"
+                >
+                  Unlock
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setLeadPinOpen(false);
+                    setLeadPinInput("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       <AlertToast
         toastKey={toastKey}

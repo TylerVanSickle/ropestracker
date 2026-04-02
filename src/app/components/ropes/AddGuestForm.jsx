@@ -35,13 +35,16 @@ function formatPhoneUS(input) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
-export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest }) {
+export default function AddGuestForm({ newGuest, setNewGuest, onAddGuest, overdriveMax }) {
   // Pull current settings so we can clamp party size to totalLines
   const maxLines = useMemo(() => {
     const s = loadSettings();
     const n = Number(s?.totalLines ?? MAX_SLING_LINES);
-    return Number.isFinite(n) ? Math.max(1, n) : MAX_SLING_LINES;
-  }, []);
+    const base = Number.isFinite(n) ? Math.max(1, n) : MAX_SLING_LINES;
+    return overdriveMax != null
+      ? Math.min(20, Math.max(base, overdriveMax))
+      : base;
+  }, [overdriveMax]);
 
   return (
     <div className="card spacer-md">

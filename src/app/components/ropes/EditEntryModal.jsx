@@ -38,6 +38,7 @@ function computeMinutesRemaining(endTime) {
 export default function EditEntryModal({
   entry,
   settings,
+  overdriveMax,
   onClose,
   onSave,
   onRemove,
@@ -58,8 +59,9 @@ export default function EditEntryModal({
 
   const totalLines = useMemo(() => {
     const n = Number(settings?.totalLines ?? 15);
-    return Number.isFinite(n) ? Math.max(1, Math.trunc(n)) : 15;
-  }, [settings?.totalLines]);
+    const base = Number.isFinite(n) ? Math.max(1, Math.trunc(n)) : 15;
+    return overdriveMax != null ? Math.min(20, Math.max(base, overdriveMax)) : base;
+  }, [settings?.totalLines, overdriveMax]);
 
   const initialDraft = useMemo(() => {
     const minsRemaining = isUp ? computeMinutesRemaining(safeEntry.endTime) : 0;
