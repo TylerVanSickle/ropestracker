@@ -12,20 +12,6 @@ import {
 import AlertToast from "@/app/components/ropes/AlertToast";
 import ConfirmModal from "@/app/components/ropes/ConfirmModal";
 
-const LS_LEAD_PIN = "ropes_lead_pin_v1";
-function loadLeadPin() {
-  try {
-    return localStorage.getItem(LS_LEAD_PIN) || "";
-  } catch {
-    return "";
-  }
-}
-function saveLeadPin(pin) {
-  try {
-    localStorage.setItem(LS_LEAD_PIN, pin);
-  } catch {}
-}
-
 async function stateGet() {
   const res = await fetch("/api/state", {
     method: "GET",
@@ -64,6 +50,7 @@ function mapDbSettings(db) {
     flowPaused: Boolean(db.flow_paused ?? false),
     flowPauseReason: String(db.flow_pause_reason ?? ""),
     flowPausedAt: db.flow_paused_at ?? null,
+    leadPin: String(db.lead_pin ?? ""),
   };
 }
 
@@ -71,12 +58,9 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState(() => loadSettings());
   const [savedMsg, setSavedMsg] = useState("");
 
-  // Lead PIN — stored locally only, not synced to DB
+  // Lead PIN — stored in DB, synced across all devices
   const [leadPin, setLeadPin] = useState("");
   const [leadPinSaved, setLeadPinSaved] = useState(false);
-  useEffect(() => {
-    setLeadPin(loadLeadPin());
-  }, []);
 
   // Staff view theme — stored locally only, applies via html class
   const [staffTheme, setStaffTheme] = useState("auto");
@@ -122,6 +106,7 @@ export default function SettingsPage() {
         const s = mapDbSettings(json.settings);
         if (s) {
           setSettings(s);
+          setLeadPin(s.leadPin || "");
           try {
             saveSettings(s);
           } catch {}
@@ -178,17 +163,21 @@ export default function SettingsPage() {
   ]);
 
   function updateTotalLines(value) {
-    setSettings((s) => ({
-      ...s,
-      totalLines: Math.min(MAX_SLING_LINES, Math.max(0, Number(value || 0))),
-    }));
+    if (value === "") {
+      setSettings((s) => ({ ...s, totalLines: "" }));
+    } else {
+      setSettings((s) => ({
+        ...s,
+        totalLines: Number(value),
+      }));
+    }
     setSavedMsg("");
   }
 
   function updateDuration(value) {
     setSettings((s) => ({
       ...s,
-      durationMin: Math.max(5, Math.min(180, Number(value || 0))),
+      durationMin: Math.max(5, Math.min(180, Number(value))),
     }));
     setSavedMsg("");
   }
@@ -430,14 +419,25 @@ export default function SettingsPage() {
                 type="number"
                 min={0}
                 max={MAX_SLING_LINES}
-                value={settings.totalLines}
-                onChange={(e) => updateTotalLines(e.target.value)}
+                value={settings.totalLines ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, totalLines: e.target.value }))
+                }
+                onBlur={(e) =>
+                  updateTotalLines(
+                    Math.min(
+                      MAX_SLING_LINES,
+                      Math.max(0, Number(e.target.value || 15)),
+                    ),
+                  )
+                }
               />
               <p className="muted helper">
                 If one is out of service, drop this number.
               </p>
             </label>
 
+            {/* Desk “Send Up” duration */}
             <label className="field">
               <span className="field-label">
                 Desk “Send Up” duration (minutes)
@@ -447,8 +447,15 @@ export default function SettingsPage() {
                 type="number"
                 min={5}
                 max={180}
-                value={settings.durationMin}
-                onChange={(e) => updateDuration(e.target.value)}
+                value={settings.durationMin ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, durationMin: e.target.value }))
+                }
+                onBlur={(e) =>
+                  updateDuration(
+                    Number(e.target.value) || 45, // fallback to 45 if empty or invalid
+                  )
+                }
               />
               <p className="muted helper">
                 This is the default time used when the desk sends a group up.
@@ -466,8 +473,18 @@ export default function SettingsPage() {
                 type="number"
                 min={5}
                 max={180}
-                value={settings.topDurationMin ?? 35}
-                onChange={(e) => updateTopDuration(e.target.value)}
+                value={settings.topDurationMin ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({
+                    ...s,
+                    topDurationMin: e.target.value,
+                  }))
+                }
+                onBlur={(e) =>
+                  updateTopDuration(
+                    Math.max(5, Math.min(180, Number(e.target.value || 30))),
+                  )
+                }
               />
               <p className="muted helper">
                 This is the timer that starts when the operator presses{" "}
@@ -536,8 +553,8 @@ export default function SettingsPage() {
               autoComplete="off"
             />
             <p className="muted helper">
-              Managers enter this PIN on the main page to allow party sizes up to
-              20 (overdrive). Leave blank to disable lead mode.
+              Managers enter this PIN on the main page to allow party sizes up
+              to 20 (overdrive). Leave blank to disable lead mode.
             </p>
           </label>
 
@@ -545,10 +562,17 @@ export default function SettingsPage() {
             <button
               className="button button-primary"
               type="button"
-              onClick={() => {
-                saveLeadPin(leadPin);
-                setLeadPinSaved(true);
-                setTimeout(() => setLeadPinSaved(false), 1500);
+              onClick={async () => {
+                try {
+                  await statePut({ settingsPatch: { lead_pin: leadPin } });
+                  setLeadPinSaved(true);
+                  setTimeout(() => setLeadPinSaved(false), 1500);
+                } catch (e) {
+                  showToast(
+                    String(e?.message || "Couldn't save PIN"),
+                    "warning",
+                  );
+                }
               }}
             >
               Save PIN
@@ -557,9 +581,16 @@ export default function SettingsPage() {
               <button
                 className="button"
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setLeadPin("");
-                  saveLeadPin("");
+                  try {
+                    await statePut({ settingsPatch: { lead_pin: "" } });
+                  } catch (e) {
+                    showToast(
+                      String(e?.message || "Couldn't clear PIN"),
+                      "warning",
+                    );
+                  }
                 }}
               >
                 Clear PIN
@@ -567,7 +598,7 @@ export default function SettingsPage() {
             ) : null}
             {leadPinSaved ? (
               <span className="muted helper" style={{ alignSelf: "center" }}>
-                Saved ✅
+                Saved
               </span>
             ) : null}
           </div>

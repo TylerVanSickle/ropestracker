@@ -53,16 +53,6 @@ import ReservationsPopup from "@/app/components/ropes/ReservationsPopup";
 const FALLBACK_REFRESH_MS = 15000; // fallback only (Realtime should handle instant)
 const NOTIFY_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute no-show window
 
-// ---------- Lead PIN (local-only, not synced to DB) ----------
-const LS_LEAD_PIN = "ropes_lead_pin_v1";
-function loadLeadPin() {
-  try {
-    return localStorage.getItem(LS_LEAD_PIN) || "";
-  } catch {
-    return "";
-  }
-}
-
 // ---------- helpers ----------
 function isPinValid(input, pin) {
   const a = digitsOnlyMax(input, LIMITS.staffPinMaxDigits);
@@ -161,6 +151,7 @@ function mapDbSettings(db) {
     venueName: String(db.venue_name ?? "Ropes Course Waitlist"),
     clientTheme: String(db.client_theme ?? "auto"),
     staffPin: String(db.staff_pin ?? ""),
+    leadPin: String(db.lead_pin ?? ""),
     flowPaused: Boolean(db.flow_paused ?? false),
     flowPauseReason: String(db.flow_pause_reason ?? ""),
     flowPausedAt: db.flow_paused_at ?? null,
@@ -1246,7 +1237,7 @@ export default function Home() {
 
   function tryActivateLead(e) {
     e.preventDefault();
-    const storedPin = loadLeadPin();
+    const storedPin = settings.leadPin || "";
     if (!storedPin) {
       fireToast("No lead PIN set. Configure one in Settings.", "warning");
       setLeadPinOpen(false);
@@ -1398,7 +1389,7 @@ export default function Home() {
               }}
             >
               <span>
-                ⏰ <strong>{a.name}</strong> | 5-minute window passed. Moved
+                <strong>{a.name}</strong> | 5-minute window passed. Moved
                 down a spot
               </span>
               <button
