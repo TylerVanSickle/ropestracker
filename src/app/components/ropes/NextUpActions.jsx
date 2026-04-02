@@ -1,11 +1,19 @@
 // NextUpActions.jsx
 "use client";
 
+function fmtCountdown(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function NextUpActions({
   nextWaiting,
   nextEstStartText,
   nextWaitRange,
   canStartNow,
+  notifyBlocked = false,
+  notifySecondsLeft = 0,
   onNotify,
   onStart, // now means "Send Up"
   onEdit,
@@ -58,8 +66,20 @@ export default function NextUpActions({
                 Send Up
               </button>
 
-              <button className="button" type="button" onClick={onNotify}>
-                Notify
+              <button
+                className="button"
+                type="button"
+                onClick={() => !notifyBlocked && onNotify()}
+                disabled={notifyBlocked}
+                title={
+                  notifyBlocked
+                    ? `Already notified — ${fmtCountdown(notifySecondsLeft)} remaining`
+                    : undefined
+                }
+              >
+                {notifyBlocked
+                  ? `Notify (${fmtCountdown(notifySecondsLeft)})`
+                  : "Notify"}
               </button>
 
               <button className="button" type="button" onClick={onEdit}>

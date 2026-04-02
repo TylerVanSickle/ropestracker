@@ -4,12 +4,21 @@ import { useMemo } from "react";
 import { formatTime } from "@/app/lib/ropesStore";
 import { formatPhoneForTel, getWaitRangeText } from "@/app/lib/ropesUtils";
 
+const NOTIFY_TIMEOUT_MS = 5 * 60 * 1000;
+
+function fmtCountdown(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function WaitingList({
   waiting,
   availableLines,
   totalLines,
   leadModeActive,
   estimateMap,
+  notifyTimerMap = {},
   onEdit,
   onMoveUp,
   onMoveDown,
@@ -66,6 +75,18 @@ export default function WaitingList({
               : "—";
             const waitRange =
               est?.estWaitMin != null ? getWaitRangeText(est.estWaitMin) : "—";
+
+            const notifyTs = notifyTimerMap[e.id] ?? 0;
+            const notifySecondsLeft =
+              notifyTs && !leadModeActive
+                ? Math.max(
+                    0,
+                    Math.ceil(
+                      (NOTIFY_TIMEOUT_MS - (Date.now() - notifyTs)) / 1000,
+                    ),
+                  )
+                : 0;
+            const isNotifyBlocked = notifySecondsLeft > 0;
 
             return (
               <div
@@ -148,10 +169,18 @@ export default function WaitingList({
                   {isFront && canSendUp ? (
                     <button
                       className="button"
-                      onClick={() => onNotify(e)}
+                      onClick={() => !isNotifyBlocked && onNotify(e)}
+                      disabled={isNotifyBlocked}
+                      title={
+                        isNotifyBlocked
+                          ? `Already notified — ${fmtCountdown(notifySecondsLeft)} remaining`
+                          : undefined
+                      }
                       type="button"
                     >
-                      Notify
+                      {isNotifyBlocked
+                        ? `Notify (${fmtCountdown(notifySecondsLeft)})`
+                        : "Notify"}
                     </button>
                   ) : null}
 

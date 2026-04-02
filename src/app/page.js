@@ -51,6 +51,7 @@ import AlertToast from "@/app/components/ropes/AlertToast";
 import ReservationsPopup from "@/app/components/ropes/ReservationsPopup";
 
 const FALLBACK_REFRESH_MS = 15000; // fallback only (Realtime should handle instant)
+const NOTIFY_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute no-show window
 
 // ---------- Lead PIN (local-only, not synced to DB) ----------
 const LS_LEAD_PIN = "ropes_lead_pin_v1";
@@ -351,6 +352,11 @@ export default function Home() {
   const [leadPinInput, setLeadPinInput] = useState("");
   const [leadPinOpen, setLeadPinOpen] = useState(false);
 
+  // Notify 5-min timer: { [entryId]: timestampMs when notified }
+  const [notifyTimerMap, setNotifyTimerMap] = useState({});
+  // Alerts shown when a notify timer expires
+  const [expiredNotifyAlerts, setExpiredNotifyAlerts] = useState([]);
+
   const refreshFromLocal = () => {
     setSettings(loadSettings());
     setEntries(ensureQueueOrderList(loadEntries()));
@@ -601,6 +607,16 @@ export default function Home() {
       !Boolean(settings.flowPaused)
     : false;
 
+  const nextNotifyTs = nextWaiting ? (notifyTimerMap[nextWaiting.id] ?? 0) : 0;
+  const nextNotifySecondsLeft =
+    nextNotifyTs && !leadModeActive
+      ? Math.max(
+          0,
+          Math.ceil((NOTIFY_TIMEOUT_MS - (now.getTime() - nextNotifyTs)) / 1000),
+        )
+      : 0;
+  const nextNotifyBlocked = nextNotifySecondsLeft > 0;
+
   const estimateMap = useMemo(() => {
     return computeEstimates({
       totalLines: settings.totalLines,
@@ -714,6 +730,7 @@ export default function Home() {
     if (!entry.phone) {
       const ok = await copyToClipboard(msg);
       alert(ok ? "Message copied to clipboard." : "Could not copy message.");
+      if (ok) setNotifyTimerMap((prev) => ({ ...prev, [entry.id]: Date.now() }));
       return;
     }
 
@@ -733,6 +750,7 @@ export default function Home() {
         ),
       );
 
+      setNotifyTimerMap((prev) => ({ ...prev, [entry.id]: Date.now() }));
       fireToast("Text sent", "success");
     } catch (e) {
       const err = String(e?.message || "");
@@ -1048,6 +1066,38 @@ export default function Home() {
     }
   }
 
+  // Notify expiry — after 5 min with no response, move group to end of line
+  useEffect(() => {
+    const nowMs = now.getTime();
+    const expired = Object.entries(notifyTimerMap).filter(
+      ([, ts]) => nowMs - ts >= NOTIFY_TIMEOUT_MS,
+    );
+    if (expired.length === 0) return;
+
+    setNotifyTimerMap((prev) => {
+      const next = { ...prev };
+      expired.forEach(([id]) => delete next[id]);
+      return next;
+    });
+
+    expired.forEach(([id]) => {
+      const entry = entriesRef.current.find(
+        (e) =>
+          String(e.id) === String(id) &&
+          String(e.status || "").toUpperCase() === "WAITING",
+      );
+      if (entry) {
+        setExpiredNotifyAlerts((prev) =>
+          prev.find((a) => a.id === id)
+            ? prev
+            : [...prev, { id, name: entry.name }],
+        );
+        moveWaiting(id, "DOWN");
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now]);
+
   // RESERVED check-ins
   useEffect(() => {
     const t = setInterval(() => {
@@ -1276,6 +1326,8 @@ export default function Home() {
           nextEstStartText={nextEstStartText}
           nextWaitRange={nextWaitRange}
           canStartNow={nextCanStartNow}
+          notifyBlocked={nextNotifyBlocked}
+          notifySecondsLeft={nextNotifySecondsLeft}
           onNotify={() => (nextWaiting ? setConfirmNotifyEntry(nextWaiting) : null)}
           onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
           onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
@@ -1298,6 +1350,42 @@ export default function Home() {
         overdriveMax={leadModeActive ? 20 : undefined}
       />
 
+      {expiredNotifyAlerts.length > 0 && (
+        <div
+          className="card spacer-sm"
+          style={{ borderLeft: "4px solid #f59e0b", padding: "10px 14px" }}
+        >
+          {expiredNotifyAlerts.map((a) => (
+            <div
+              key={a.id}
+              className="row"
+              style={{
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "4px 0",
+                gap: 12,
+              }}
+            >
+              <span>
+                ⏰ <strong>{a.name}</strong> — 5-minute window passed. Moved to
+                end of line.
+              </span>
+              <button
+                className="button"
+                type="button"
+                onClick={() =>
+                  setExpiredNotifyAlerts((prev) =>
+                    prev.filter((x) => x.id !== a.id),
+                  )
+                }
+              >
+                Dismiss
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <section className="grid-2 spacer-md">
         <WaitlingList
           waiting={waiting}
@@ -1305,6 +1393,7 @@ export default function Home() {
           totalLines={settings.totalLines}
           leadModeActive={leadModeActive}
           estimateMap={estimateMap}
+          notifyTimerMap={notifyTimerMap}
           onEdit={(id) => setEditingId(id)}
           onMoveUp={(id) => moveWaiting(id, "UP")}
           onMoveDown={(id) => moveWaiting(id, "DOWN")}
@@ -1390,7 +1479,7 @@ export default function Home() {
               Lead Mode
             </h2>
             <p className="muted helper">
-              Enter the lead PIN to allow overdrive — party sizes up to 15.
+              Enter the lead PIN to allow overdrive — party sizes up to 20.
             </p>
             <form
               className="guest-form spacer-sm"
