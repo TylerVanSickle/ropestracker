@@ -610,15 +610,16 @@ export default function Home() {
       !Boolean(settings.flowPaused)
     : false;
 
-  const nextNotifyTs =
-    nextWaiting?.lastNotifiedAt
-      ? new Date(nextWaiting.lastNotifiedAt).getTime()
-      : 0;
+  const nextNotifyTs = nextWaiting?.lastNotifiedAt
+    ? new Date(nextWaiting.lastNotifiedAt).getTime()
+    : 0;
   const nextNotifySecondsLeft =
     nextNotifyTs && !leadModeActive
       ? Math.max(
           0,
-          Math.ceil((NOTIFY_TIMEOUT_MS - (now.getTime() - nextNotifyTs)) / 1000),
+          Math.ceil(
+            (NOTIFY_TIMEOUT_MS - (now.getTime() - nextNotifyTs)) / 1000,
+          ),
         )
       : 0;
   const nextNotifyBlocked = nextNotifySecondsLeft > 0;
@@ -750,7 +751,10 @@ export default function Home() {
           op: "PATCH_ENTRY",
           payload: {
             id: entry.id,
-            patch: toDbPatchFromUi({ lastNotifiedAt: nowISO, notifiedCount: newCount }),
+            patch: toDbPatchFromUi({
+              lastNotifiedAt: nowISO,
+              notifiedCount: newCount,
+            }),
           },
         }).catch(() => {});
       }
@@ -774,7 +778,10 @@ export default function Home() {
         op: "PATCH_ENTRY",
         payload: {
           id: entry.id,
-          patch: toDbPatchFromUi({ lastNotifiedAt: nowISO, notifiedCount: newCount }),
+          patch: toDbPatchFromUi({
+            lastNotifiedAt: nowISO,
+            notifiedCount: newCount,
+          }),
         },
       }).catch(() => {});
       fireToast("Text sent", "success");
@@ -817,7 +824,11 @@ export default function Home() {
       const phone = clampText(newGuest.phone, LIMITS.entryPhone).trim();
       const notes = clampText(newGuest.notes, LIMITS.entryIntakeNotes).trim();
 
-      const maxLines = clampInt(settings.totalLines, 1, leadModeActive ? 20 : 15);
+      const maxLines = clampInt(
+        settings.totalLines,
+        1,
+        leadModeActive ? 20 : 15,
+      );
       const partySize = clampInt(newGuest.partySize || 1, 1, maxLines);
 
       // IMPORTANT: must be UUID if we send it to DB
@@ -1346,7 +1357,9 @@ export default function Home() {
           canStartNow={nextCanStartNow}
           notifyBlocked={nextNotifyBlocked}
           notifySecondsLeft={nextNotifySecondsLeft}
-          onNotify={() => (nextWaiting ? setConfirmNotifyEntry(nextWaiting) : null)}
+          onNotify={() =>
+            nextWaiting ? setConfirmNotifyEntry(nextWaiting) : null
+          }
           onStart={() => (nextWaiting ? startGroup(nextWaiting.id) : null)}
           onEdit={() => (nextWaiting ? setEditingId(nextWaiting.id) : null)}
           onRemove={() => (nextWaiting ? remove(nextWaiting.id) : null)}
@@ -1385,8 +1398,8 @@ export default function Home() {
               }}
             >
               <span>
-                ⏰ <strong>{a.name}</strong> — 5-minute window passed. Moved to
-                end of line.
+                ⏰ <strong>{a.name}</strong> | 5-minute window passed. Moved
+                down a spot
               </span>
               <button
                 className="button"
@@ -1498,10 +1511,7 @@ export default function Home() {
             <p className="muted helper">
               Enter the lead PIN to allow overdrive — party sizes up to 20.
             </p>
-            <form
-              className="guest-form spacer-sm"
-              onSubmit={tryActivateLead}
-            >
+            <form className="guest-form spacer-sm" onSubmit={tryActivateLead}>
               <label className="field">
                 <span className="field-label">Lead PIN</span>
                 <input
@@ -1518,10 +1528,7 @@ export default function Home() {
                 />
               </label>
               <div className="row">
-                <button
-                  className="button button-primary"
-                  type="submit"
-                >
+                <button className="button button-primary" type="submit">
                   Unlock
                 </button>
                 <button
