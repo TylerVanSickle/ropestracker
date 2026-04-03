@@ -72,9 +72,9 @@ export default function UpNowList({
 }) {
   const safeActive = Array.isArray(active) ? active : [];
 
-  //   total "people/lines" currently on course (sum of partySize)
+  //   total "people/lines" currently on course (sum of linesUsed)
   const activeLinesUsed = safeActive.reduce(
-    (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+    (sum, e) => sum + Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1)),
     0,
   );
 
@@ -135,7 +135,7 @@ export default function UpNowList({
                   <div className="item-title">
                     {e.name}{" "}
                     <span className="pill">
-                      {Math.max(1, Number(e.partySize || 1))} lines
+                      {Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1))} lines
                     </span>
                     <span className="pill">{phaseLabel}</span>
                     {e.assignedTag ? (

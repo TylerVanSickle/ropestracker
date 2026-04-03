@@ -45,7 +45,7 @@ export default function WaitlistSection({
               <div className="item-title">
                 #{idx + 1} {e.name}{" "}
                 <span className="pill">
-                  {Math.max(1, Number(e.partySize || 1))} lines
+                  {Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1))} lines
                 </span>
               </div>
               <div className="muted item-sub">
