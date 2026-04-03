@@ -51,7 +51,7 @@ export function getDerived(entriesRaw, settings) {
 
   let used = 0;
   for (const e of up) {
-    const needs = Math.max(1, Number(e.partySize || 1));
+    const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
     const end = e.endTime ? new Date(e.endTime).getTime() : NaN;
 
     if (Number.isFinite(end) && end > now) used += needs;

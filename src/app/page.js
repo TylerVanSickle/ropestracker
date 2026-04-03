@@ -584,7 +584,7 @@ export default function Home() {
 
   const occupiedLines = useMemo(() => {
     return active.reduce(
-      (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+      (sum, e) => sum + Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1)),
       0,
     );
   }, [active]);
@@ -909,11 +909,11 @@ export default function Home() {
       (e) => String(e.status || "").toUpperCase() === "UP",
     );
     const occupiedPrev = activePrev.reduce(
-      (sum, e) => sum + Math.max(1, Number(e.partySize || 1)),
+      (sum, e) => sum + Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1)),
       0,
     );
     const availablePrev = Math.max(0, settings.totalLines - occupiedPrev);
-    const linesNeeded = Math.max(1, Number(front.partySize || 1));
+    const linesNeeded = Math.max(1, Number(front.linesUsed ?? front.partySize ?? 1));
 
     if (!leadModeActive && linesNeeded > availablePrev) {
       alert(
@@ -1178,11 +1178,14 @@ export default function Home() {
   }, [editingId, entries]);
 
   async function saveEdit(updated) {
-    const coerced = {
-      ...updated,
-      partySize: Math.max(1, Number(updated.partySize || 1)),
-    };
-    coerced.linesUsed = coerced.partySize;
+    const isUp = String(updated.status || "").toUpperCase() === "UP";
+    const linesUsed = Math.max(1, Number(updated.linesUsed || 1));
+    // For UP entries: keep original partySize (analytics). For WAITING: sync with linesUsed.
+    const partySize = isUp
+      ? Math.max(1, Number(updated.partySize || 1))
+      : linesUsed;
+
+    const coerced = { ...updated, partySize, linesUsed };
 
     setEntries((prev) => {
       pushUndoSnapshot(prev);
@@ -1197,7 +1200,9 @@ export default function Home() {
     try {
       const patch = toDbPatchFromUi({
         name: coerced.name,
-        partySize: coerced.partySize,
+        // Only write party_size to DB for WAITING entries — UP entries preserve
+        // the original registered count so analytics records the right number.
+        ...(!isUp ? { partySize: coerced.partySize } : {}),
         phone: coerced.phone,
         notes: coerced.notes,
         linesUsed: coerced.linesUsed,

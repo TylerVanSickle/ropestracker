@@ -36,7 +36,7 @@ export default function OnCourseSection({
       ) : (
         <div className="list spacer-sm" style={{ marginTop: 12 }}>
           {onCourse.map((e) => {
-            const needs = Math.max(1, Number(e.partySize || 1));
+            const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
             const left = minutesLeft(e.endTime);
             const leftText =
               left == null

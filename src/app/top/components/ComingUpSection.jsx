@@ -85,7 +85,7 @@ export default function ComingUpSection({
       ) : (
         <div className="list spacer-sm" style={{ marginTop: 12 }}>
           {sentPreview.map((e) => {
-            const needs = Math.max(1, Number(e.partySize || 1));
+            const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
             const tagOptions = tagOptionsForEntry(e);
             const selected = mergeIds.includes(e.id);
 

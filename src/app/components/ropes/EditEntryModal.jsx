@@ -65,13 +65,18 @@ export default function EditEntryModal({
 
   const initialDraft = useMemo(() => {
     const minsRemaining = isUp ? computeMinutesRemaining(safeEntry.endTime) : 0;
-    const partySize = clampInt(safeEntry.partySize || 1, 1, totalLines);
+    // Show linesUsed (current operational count) not partySize (original registration)
+    const linesUsed = clampInt(
+      safeEntry.linesUsed ?? safeEntry.partySize ?? 1,
+      1,
+      totalLines,
+    );
 
     return {
       name: safeEntry.name || "",
       phone: safeEntry.phone || "",
       notes: safeEntry.notes || "",
-      partySize,
+      linesUsed,
       minutesRemaining: isUp ? clampInt(minsRemaining, 0, 999) : 0,
     };
   }, [
@@ -79,6 +84,7 @@ export default function EditEntryModal({
     safeEntry.name,
     safeEntry.phone,
     safeEntry.notes,
+    safeEntry.linesUsed,
     safeEntry.partySize,
     safeEntry.endTime,
     totalLines,
@@ -102,15 +108,17 @@ export default function EditEntryModal({
 
     const phone = clampText(draft.phone, LIMITS.entryPhone).trim();
     const notes = clampText(draft.notes, LIMITS.entryIntakeNotes).trim();
-    const partySize = clampInt(draft.partySize || 1, 1, totalLines);
+    const linesUsed = clampInt(draft.linesUsed || 1, 1, totalLines);
 
     const updated = {
       ...entry,
       name,
       phone,
       notes,
-      partySize,
-      linesUsed: partySize,
+      linesUsed,
+      // For WAITING entries partySize == linesUsed (no one on course yet).
+      // For UP entries preserve the original partySize so analytics stays accurate.
+      ...(!isUp ? { partySize: linesUsed } : {}),
     };
 
     if (isUp) {
@@ -160,37 +168,37 @@ export default function EditEntryModal({
             </label>
 
             <label className="field">
-              <span className="field-label">Party size (lines)</span>
+              <span className="field-label">Lines in use</span>
               <input
                 className="input"
                 type="number"
                 min={1}
                 max={totalLines}
-                value={draft.partySize}
+                value={draft.linesUsed}
                 onChange={(e) => {
                   const raw = e.target.value;
 
                   if (raw === "") {
-                    setDraft((d) => ({ ...d, partySize: "" }));
+                    setDraft((d) => ({ ...d, linesUsed: "" }));
                     return;
                   }
 
                   setDraft((d) => ({
                     ...d,
-                    partySize: clampInt(raw, 1, totalLines),
+                    linesUsed: clampInt(raw, 1, totalLines),
                   }));
                 }}
                 onBlur={() => {
                   setDraft((d) => {
-                    const cur = d.partySize;
+                    const cur = d.linesUsed;
                     if (
                       cur === "" ||
                       !Number.isFinite(Number(cur)) ||
                       Number(cur) < 1
                     ) {
-                      return { ...d, partySize: 1 };
+                      return { ...d, linesUsed: 1 };
                     }
-                    return { ...d, partySize: clampInt(cur, 1, totalLines) };
+                    return { ...d, linesUsed: clampInt(cur, 1, totalLines) };
                   });
                 }}
               />
