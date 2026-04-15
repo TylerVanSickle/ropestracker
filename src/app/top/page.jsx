@@ -22,6 +22,7 @@ import WaitlistSection from "./components/WaitlistSection";
 import OperatorNotesSection from "./components/OperatorNotesSection";
 import EditGroupModal from "./components/EditGroupModal";
 import SplitGroupModal from "./components/SplitGroupModal";
+import TopSoundController from "@/app/components/ropes/TopSoundController";
 
 import {
   entryTintStyle,
@@ -837,6 +838,8 @@ export default function TopRopesPage() {
         durationMs={1600}
         side="right"
       />
+
+      <TopSoundController entries={entries} />
 
       <TopHeader
         closed={closed}
