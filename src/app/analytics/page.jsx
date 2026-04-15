@@ -595,6 +595,9 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <Link className="button button-primary" href="/analytics/advanced">
+              Advanced Search
+            </Link>
             <Link className="button" href="/">
               Bottom
             </Link>
