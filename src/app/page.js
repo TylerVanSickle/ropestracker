@@ -190,6 +190,7 @@ function mapDbEntry(db) {
     lastNotifiedAt: db.last_notified_at ?? null,
     notifiedCount: db.notified_count ?? 0,
     reserveAtISO: db.reserve_at_iso ?? null,
+    mergeHistory: db.merge_history ?? null,
   };
 }
 
