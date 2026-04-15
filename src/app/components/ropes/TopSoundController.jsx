@@ -1,33 +1,82 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadSettings } from "@/app/lib/ropesStore";
+
+const STORAGE_KEY = "rt_sounds_unlocked";
 
 /**
  * Plays a jingle on /top when Bottom sends a group up.
  * Detects "new sentUpAt" values in entries and plays once.
- 
  */
 export default function TopSoundController({
   entries = [],
-  sentUpField = "sentUpAt", // your entry uses sentUpAt already
+  sentUpField = "sentUpAt",
 }) {
+  const [mounted, setMounted] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-
-  // read setting once (simple). If you want it to react live, we can subscribe later.
-  const soundsEnabled = useMemo(() => {
-    const s = loadSettings();
-    return s?.soundsEnabled ?? true;
-  }, []);
 
   const audioRef = useRef(null);
   const lastSeenSentUpRef = useRef(0);
+  const unlockedRef = useRef(false);
+
+  // Wait for mount to avoid hydration mismatch (localStorage not available on server)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const soundsEnabled = mounted ? (loadSettings()?.soundsEnabled ?? true) : true;
 
   // Create audio once
   useEffect(() => {
     audioRef.current = new Audio("/sounds/send-up.mp3");
     audioRef.current.preload = "auto";
   }, []);
+
+  // On mount, if previously unlocked, auto-unlock on first user gesture
+  useEffect(() => {
+    if (!mounted || !soundsEnabled) return;
+
+    const wasUnlocked = localStorage.getItem(STORAGE_KEY) === "1";
+    if (!wasUnlocked) return;
+
+    const trySilentUnlock = async () => {
+      if (unlockedRef.current) return;
+      const a = audioRef.current;
+      if (!a) return;
+      try {
+        const originalVol = a.volume;
+        a.volume = 0.001;
+        a.currentTime = 0;
+        await a.play();
+        a.pause();
+        a.currentTime = 0;
+        a.volume = originalVol;
+        unlockedRef.current = true;
+        setUnlocked(true);
+        cleanup();
+      } catch {
+        // blocked — wait for user gesture
+      }
+    };
+
+    const onGesture = () => trySilentUnlock();
+
+    const cleanup = () => {
+      document.removeEventListener("click", onGesture, true);
+      document.removeEventListener("touchstart", onGesture, true);
+      document.removeEventListener("keydown", onGesture, true);
+    };
+
+    document.addEventListener("click", onGesture, true);
+    document.addEventListener("touchstart", onGesture, true);
+    document.addEventListener("keydown", onGesture, true);
+
+    // Try immediately (works on soft navigation, may fail on hard refresh)
+    trySilentUnlock();
+
+    return cleanup;
+  }, [mounted, soundsEnabled]);
 
   function toMs(value) {
     if (!value) return 0;
@@ -48,7 +97,6 @@ export default function TopSoundController({
     }
   }
 
-  // iPad requires one user gesture to allow audio
   async function enableSounds() {
     if (!soundsEnabled) return;
     try {
@@ -63,13 +111,15 @@ export default function TopSoundController({
       a.currentTime = 0;
       a.volume = originalVol;
 
+      localStorage.setItem(STORAGE_KEY, "1");
+      unlockedRef.current = true;
       setUnlocked(true);
     } catch {
       setUnlocked(false);
     }
   }
 
-  // detect new sentUpAt
+  // Detect new sentUpAt
   useEffect(() => {
     if (!soundsEnabled || !unlocked) return;
 
@@ -86,6 +136,8 @@ export default function TopSoundController({
     }
   }, [entries, soundsEnabled, unlocked, sentUpField]);
 
+  // Don't render anything until mounted (avoids hydration mismatch)
+  if (!mounted) return null;
   if (!soundsEnabled) return null;
 
   if (!unlocked) {
@@ -114,7 +166,7 @@ export default function TopSoundController({
           </div>
         </div>
         <p className="muted helper" style={{ marginTop: 8 }}>
-          If you don’t hear anything, check mute switch / volume.
+          If you don't hear anything, check mute switch / volume.
         </p>
       </div>
     );
