@@ -1,6 +1,7 @@
 "use client";
 
 import { formatTime } from "@/app/lib/ropesStore";
+import MergeHistoryBadge from "@/app/components/ropes/MergeHistoryBadge";
 
 function formatPhoneForTel(phone) {
   const trimmed = (phone || "").trim();
@@ -180,6 +181,8 @@ export default function UpNowList({
                   {e.notes ? (
                     <div className="item-notes">📝 {e.notes}</div>
                   ) : null}
+
+                  <MergeHistoryBadge mergeHistory={e.mergeHistory} />
                 </div>
 
                 <div className="item-actions">

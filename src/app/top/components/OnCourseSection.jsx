@@ -1,5 +1,6 @@
 import { formatTime } from "@/app/lib/ropesStore";
 import { minutesLeft } from "@/app/top/lib/topRopesHelpers";
+import MergeHistoryBadge from "@/app/components/ropes/MergeHistoryBadge";
 
 export default function OnCourseSection({
   onCourse,
@@ -76,6 +77,8 @@ export default function OnCourseSection({
                       📝 {e.notes}
                     </div>
                   ) : null}
+
+                  <MergeHistoryBadge mergeHistory={e.mergeHistory} />
                 </div>
 
                 <div

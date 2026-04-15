@@ -106,7 +106,7 @@ export async function GET(req) {
     // Query history
     let q = sb
       .from("ropes_entries_history")
-      .select("id, name, phone, party_size, assigned_tag, status, notes, created_at, sent_up_at, started_at, start_time, end_time, finished_at, finish_reason")
+      .select("id, name, phone, party_size, assigned_tag, status, notes, created_at, sent_up_at, started_at, start_time, end_time, finished_at, finish_reason, merge_history")
       .eq("site_id", siteId)
       .order("finished_at", { ascending: false })
       .limit(500);

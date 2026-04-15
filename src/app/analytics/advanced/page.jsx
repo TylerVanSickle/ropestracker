@@ -405,6 +405,32 @@ export default function AdvancedSearchPage() {
                         {r.notes}
                       </div>
                     )}
+
+                    {/* Merge history */}
+                    {Array.isArray(r.merge_history) && r.merge_history.length > 0 && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          marginTop: 8,
+                          padding: "8px 10px",
+                          background: "var(--color-bg)",
+                          borderRadius: 10,
+                          border: "1px solid var(--color-border)",
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                          Original groups before merge:
+                        </div>
+                        {r.merge_history.map((g, i) => (
+                          <div key={g.id || i} style={{ marginTop: 4 }}>
+                            <span style={{ fontWeight: 600 }}>{g.name || "—"}</span>
+                            {" — "}group of {g.partySize || "?"}
+                            {g.phone && g.phone !== "0" ? ` • ${g.phone}` : ""}
+                            {g.assignedTag ? ` • ${g.assignedTag}` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Right side: status */}

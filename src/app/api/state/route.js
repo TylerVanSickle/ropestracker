@@ -203,6 +203,7 @@ export async function PUT(req) {
         end_time: live.end_time,
         ended_early_at: live.ended_early_at,
         finish_reason: finishReason,
+        merge_history: live.merge_history ?? null,
       };
 
       const { error: he } = await sb
@@ -262,6 +263,7 @@ export async function PUT(req) {
         end_time: live.end_time,
         ended_early_at: live.ended_early_at,
         finish_reason: finishReason,
+        merge_history: live.merge_history ?? null,
       }));
 
       const { error: he } = await sb

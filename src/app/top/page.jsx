@@ -21,6 +21,7 @@ import OnCourseSection from "./components/OnCourseSection";
 import WaitlistSection from "./components/WaitlistSection";
 import OperatorNotesSection from "./components/OperatorNotesSection";
 import EditGroupModal from "./components/EditGroupModal";
+import SplitGroupModal from "./components/SplitGroupModal";
 
 import {
   entryTintStyle,
@@ -85,6 +86,7 @@ function mapDbEntry(db) {
     startTime: db.start_time ?? null,
     endTime: db.end_time ?? null,
     endedEarlyAt: db.ended_early_at ?? null,
+    mergeHistory: db.merge_history ?? null,
   };
 }
 
@@ -190,6 +192,9 @@ export default function TopRopesPage() {
   // Archive modal state
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveEntry, setArchiveEntry] = useState(null);
+
+  // Split modal state
+  const [splitEntry, setSplitEntry] = useState(null);
 
   // Finish confirm
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
@@ -597,6 +602,30 @@ export default function TopRopesPage() {
       .join(" • ")
       .slice(0, 200);
 
+    // Snapshot both groups’ original data for merge history
+    const mergeHistory = [
+      {
+        id: a.id,
+        name: a.name,
+        partySize: a.partySize,
+        phone: a.phone,
+        notes: a.notes || null,
+        assignedTag: a.assignedTag,
+        createdAt: a.createdAt,
+        sentUpAt: a.sentUpAt,
+      },
+      {
+        id: b.id,
+        name: b.name,
+        partySize: b.partySize,
+        phone: b.phone,
+        notes: b.notes || null,
+        assignedTag: b.assignedTag,
+        createdAt: b.createdAt,
+        sentUpAt: b.sentUpAt,
+      },
+    ];
+
     // optimistic local
     setEntries((prev) =>
       prev
@@ -609,6 +638,7 @@ export default function TopRopesPage() {
                 partySize: mergedParty,
                 linesUsed: mergedParty,
                 notes: mergedNotes,
+                mergeHistory,
               },
         ),
     );
@@ -623,6 +653,7 @@ export default function TopRopesPage() {
               party_size: mergedParty,
               lines_used: mergedParty,
               notes: mergedNotes,
+              merge_history: mergeHistory,
             },
           },
         }),
@@ -634,6 +665,82 @@ export default function TopRopesPage() {
     } catch {
       setRemoteOnline(false);
       showToast("Merged locally — couldn’t sync", "warning");
+    }
+  }
+
+  // ===== Split =====
+  function openSplit(entry) {
+    setSplitEntry(entry);
+  }
+
+  function closeSplit() {
+    setSplitEntry(null);
+  }
+
+  async function handleSplit(entry, groupSizes) {
+    if (!entry?.id || !groupSizes?.length) return;
+
+    const parentName = entry.name || "Group";
+
+    // Create sub-group entries, delete the original
+    // Each sub-group inherits the parent's sent-up state
+    const createOps = groupSizes.map((size, idx) =>
+      statePut({
+        op: "CREATE_ENTRY",
+        payload: {
+          name: `${parentName} (${idx + 1}/${groupSizes.length})`,
+          party_size: size,
+          lines_used: size,
+          phone: idx === 0 ? (entry.phone || null) : null,
+          notes: `Split from ${parentName} (${entry.partySize || "?"} total)`,
+          status: "UP",
+          course_phase: "SENT",
+          sent_up_at: entry.sentUpAt || new Date().toISOString(),
+          started_at: entry.startedAt || new Date().toISOString(),
+          created_at: entry.createdAt || new Date().toISOString(),
+        },
+      }),
+    );
+
+    // Optimistic: remove original, add sub-groups locally
+    setEntries((prev) => {
+      const without = prev.filter((e) => e.id !== entry.id);
+      const newEntries = groupSizes.map((size, idx) => ({
+        id: `split-temp-${idx}-${Date.now()}`,
+        name: `${parentName} (${idx + 1}/${groupSizes.length})`,
+        partySize: size,
+        linesUsed: size,
+        phone: idx === 0 ? (entry.phone || "") : "",
+        notes: `Split from ${parentName} (${entry.partySize || "?"} total)`,
+        status: "UP",
+        coursePhase: "SENT",
+        assignedTag: null,
+        queueOrder: (entry.queueOrder || 0) + idx,
+        sentUpAt: entry.sentUpAt || new Date().toISOString(),
+        startedAt: entry.startedAt || new Date().toISOString(),
+        createdAt: entry.createdAt || new Date().toISOString(),
+        startTime: null,
+        endTime: null,
+        endedEarlyAt: null,
+        timeAdjustMin: 0,
+        mergeHistory: null,
+      }));
+      return [...without, ...newEntries];
+    });
+
+    try {
+      await Promise.all([
+        ...createOps,
+        statePut({ op: "DELETE_ENTRY", payload: { id: entry.id } }),
+      ]);
+      setRemoteOnline(true);
+      closeSplit();
+      showToast(`Split into ${groupSizes.length} groups`, "success");
+      refreshFromServer();
+    } catch {
+      setRemoteOnline(false);
+      showToast("Split locally — couldn't sync", "warning");
+      closeSplit();
     }
   }
 
@@ -764,6 +871,7 @@ export default function TopRopesPage() {
             handleFinish={handleFinish}
             openArchive={openArchive}
             entryTintStyle={entryTintStyle}
+            openSplit={openSplit}
           />
 
           <OnCourseSection
@@ -817,6 +925,13 @@ export default function TopRopesPage() {
         setEditDraft={setEditDraft}
         closeEdit={closeEdit}
         saveEdit={saveEdit}
+      />
+
+      <SplitGroupModal
+        open={Boolean(splitEntry)}
+        entry={splitEntry}
+        onClose={closeSplit}
+        onSplit={handleSplit}
       />
     </main>
   );

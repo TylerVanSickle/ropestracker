@@ -1,4 +1,5 @@
 import { formatTime } from "@/app/lib/ropesStore";
+import MergeHistoryBadge from "@/app/components/ropes/MergeHistoryBadge";
 
 export default function ComingUpSection({
   sentUp,
@@ -18,6 +19,7 @@ export default function ComingUpSection({
   handleFinish,
   openArchive,
   entryTintStyle,
+  openSplit,
 }) {
   return (
     <section className="card">
@@ -69,7 +71,8 @@ export default function ComingUpSection({
       </div>
 
       <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-        Tip: Select 2 groups to merge if desk sent them up together.
+        Tip: Select 2 groups to merge, or use Split on large groups to break
+        them into waves.
       </div>
 
       {sentUp.length === 0 ? (
@@ -114,6 +117,8 @@ export default function ComingUpSection({
                   {e.notes ? (
                     <div className="item-notes">📝 {e.notes}</div>
                   ) : null}
+
+                  <MergeHistoryBadge mergeHistory={e.mergeHistory} />
 
                   <div className="muted item-sub">
                     Sent up: {e.sentUpAt ? formatTime(e.sentUpAt) : "—"}
@@ -174,6 +179,16 @@ export default function ComingUpSection({
                   className="item-actions"
                   style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
                 >
+                  {Number(e.linesUsed ?? e.partySize ?? 1) > 1 && (
+                    <button
+                      className="button"
+                      onClick={() => openSplit(e)}
+                      type="button"
+                    >
+                      Split
+                    </button>
+                  )}
+
                   <button
                     className="button button-primary"
                     onClick={() => handleStartCourse(e)}
