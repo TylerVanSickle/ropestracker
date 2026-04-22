@@ -29,13 +29,13 @@ export default function SplitGroupModal({ open, entry, onClose, onSplit }) {
 
   if (!open || !entry) return null;
 
-  const assigned = groups.reduce((a, b) => a + b, 0);
+  const assigned = groups.reduce((a, b) => a + (Number(b) || 0), 0);
   const isValid = assigned === totalLines && groups.every((g) => g >= 1);
 
   function updateGroup(idx, value) {
     setGroups((prev) => {
       const next = [...prev];
-      next[idx] = Math.max(1, Math.min(totalLines, Number(value) || 1));
+      next[idx] = value === "" ? "" : Math.max(1, Math.min(totalLines, Number(value)));
       return next;
     });
   }
