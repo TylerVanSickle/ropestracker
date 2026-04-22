@@ -113,7 +113,7 @@ export default function SplitGroupModal({ open, entry, onClose, onSplit }) {
               <input
                 className="input"
                 type="number"
-                min={1}
+                min={0}
                 max={totalLines}
                 value={size}
                 onChange={(e) => updateGroup(idx, e.target.value)}
