@@ -10,8 +10,6 @@ import {
   saveEntries,
   uid,
   subscribeToRopesStorage,
-  loadUndoStack,
-  saveUndoStack,
   archiveToday,
   loadStaffAuthedAt,
   setStaffAuthedNow,
@@ -23,6 +21,8 @@ import {
 } from "@/app/lib/ropesStore";
 
 import Topbar from "@/app/components/ropes/Topbar";
+import UndoHistoryPanel from "@/app/components/ropes/UndoHistoryPanel";
+import useUndoHistory from "@/app/lib/useUndoHistory";
 import QuickQuote from "@/app/components/ropes/QuickQuote";
 import AddGuestForm from "@/app/components/ropes/AddGuestForm";
 import UpNowList from "@/app/components/ropes/UpNowList";
@@ -291,7 +291,7 @@ export default function Home() {
 
   const [now, setNow] = useState(() => new Date());
 
-  const [undoStack, setUndoStack] = useState(() => loadUndoStack());
+  const undoHistory = useUndoHistory();
 
   // reservations popup
   const [reservationsOpen, setReservationsOpen] = useState(false);
@@ -355,7 +355,6 @@ export default function Home() {
   const refreshFromLocal = () => {
     setSettings(loadSettings());
     setEntries(ensureQueueOrderList(loadEntries()));
-    setUndoStack(loadUndoStack());
   };
 
   const createLockRef = useRef(false);
@@ -547,28 +546,23 @@ export default function Home() {
     } catch {}
   }, [entries]);
 
-  function pushUndoSnapshot(prevEntries) {
-    const snap = {
-      at: new Date().toISOString(),
-      entries: Array.isArray(prevEntries) ? prevEntries : [],
+  // Helper to create a CREATE_ENTRY payload from a live-entry snapshot
+  function entryToCreatePayload(e) {
+    return {
+      id: e.id,
+      name: e.name,
+      party_size: e.partySize,
+      lines_used: e.linesUsed ?? e.partySize,
+      phone: e.phone ?? null,
+      notes: e.notes ?? null,
+      status: e.status ?? "WAITING",
+      course_phase: e.coursePhase ?? null,
+      queue_order: e.queueOrder ?? null,
+      assigned_tag: e.assignedTag ?? null,
+      sent_up_at: e.sentUpAt ?? null,
+      started_at: e.startedAt ?? null,
+      created_at: e.createdAt ?? null,
     };
-    setUndoStack((prev) => {
-      const next = [snap, ...(Array.isArray(prev) ? prev : [])].slice(0, 20);
-      saveUndoStack(next);
-      return next;
-    });
-  }
-
-  function undoLast() {
-    setUndoStack((prev) => {
-      if (!prev || prev.length === 0) return prev;
-      const [top, ...rest] = prev;
-      if (top?.entries) {
-        setEntries(ensureQueueOrderList(top.entries));
-      }
-      saveUndoStack(rest);
-      return rest;
-    });
   }
 
   const waiting = useMemo(() => {
@@ -831,7 +825,7 @@ export default function Home() {
 
       // optimistic local
       setEntries((prev) => {
-        pushUndoSnapshot(prev);
+        /* undo now handled via useUndoHistory */
         const next = [
           ...prev,
           {
@@ -869,6 +863,15 @@ export default function Home() {
         });
 
         setRemoteOnline(true);
+
+        undoHistory.pushAction({
+          type: "ADD",
+          description: `Added ${name}`,
+          reverse: async () => {
+            await statePut({ op: "DELETE_ENTRY", payload: { id: localId } });
+            refreshFromServer();
+          },
+        });
       } catch (err) {
         console.error("CREATE_ENTRY failed:", err);
         setRemoteOnline(false);
@@ -923,6 +926,17 @@ export default function Home() {
       return;
     }
 
+    // Snapshot prior state for undo
+    const prevPatch = {
+      status: front.status ?? "WAITING",
+      partySize: front.partySize,
+      linesUsed: front.linesUsed ?? front.partySize,
+      startedAt: front.startedAt ?? null,
+      sentUpAt: front.sentUpAt ?? null,
+      coursePhase: front.coursePhase ?? null,
+      endTime: front.endTime ?? null,
+    };
+
     const nowISO = new Date().toISOString();
     const patch = {
       status: "UP",
@@ -935,7 +949,6 @@ export default function Home() {
     };
 
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
       return prev.map((e) =>
         String(e.id) !== String(id) ? e : { ...e, ...patch },
       );
@@ -947,6 +960,18 @@ export default function Home() {
         payload: { id, patch: toDbPatchFromUi(patch) },
       });
       setRemoteOnline(true);
+
+      undoHistory.pushAction({
+        type: "SEND_UP",
+        description: `Sent up ${front.name || "group"}`,
+        reverse: async () => {
+          await statePut({
+            op: "PATCH_ENTRY",
+            payload: { id, patch: toDbPatchFromUi(prevPatch) },
+          });
+          refreshFromServer();
+        },
+      });
     } catch (err) {
       console.error("PATCH_ENTRY (startGroup) failed:", err);
       setRemoteOnline(false);
@@ -955,9 +980,11 @@ export default function Home() {
   }
 
   async function completeGroup(id) {
+    const snap = entriesRef.current.find((e) => String(e.id) === String(id));
+    if (!snap) return;
+
     // optimistic local
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
       return prev.map((e) =>
         String(e.id) === String(id)
           ? { ...e, status: "DONE", linesUsed: 0 }
@@ -967,11 +994,33 @@ export default function Home() {
 
     // move to history so it disappears from live table too
     try {
-      await statePut({
+      const resp = await statePut({
         op: "MOVE_TO_HISTORY",
         payload: { id, status: "DONE", finish_reason: "Finished (bottom)" },
       });
       setRemoteOnline(true);
+
+      const historyId = resp?.history_id || null;
+
+      undoHistory.pushAction({
+        type: "FINISH",
+        description: `Finished ${snap.name || "group"}`,
+        reverse: async () => {
+          await statePut({
+            op: "CREATE_ENTRY",
+            payload: entryToCreatePayload(snap),
+          });
+          if (historyId) {
+            try {
+              await statePut({
+                op: "DELETE_FROM_HISTORY",
+                payload: { id: historyId },
+              });
+            } catch {}
+          }
+          refreshFromServer();
+        },
+      });
     } catch (err) {
       console.error("MOVE_TO_HISTORY (completeGroup) failed:", err);
       setRemoteOnline(false);
@@ -980,14 +1029,29 @@ export default function Home() {
   }
 
   async function remove(id) {
+    const snap = entriesRef.current.find((e) => String(e.id) === String(id));
+
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
       return prev.filter((e) => String(e.id) !== String(id));
     });
 
     try {
       await statePut({ op: "DELETE_ENTRY", payload: { id } });
       setRemoteOnline(true);
+
+      if (snap) {
+        undoHistory.pushAction({
+          type: "REMOVE",
+          description: `Removed ${snap.name || "group"}`,
+          reverse: async () => {
+            await statePut({
+              op: "CREATE_ENTRY",
+              payload: entryToCreatePayload(snap),
+            });
+            refreshFromServer();
+          },
+        });
+      }
     } catch (err) {
       console.error("DELETE_ENTRY failed:", err);
       setRemoteOnline(false);
@@ -997,7 +1061,7 @@ export default function Home() {
 
   async function clearAll() {
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
+      /* undo now handled via useUndoHistory */
       return [];
     });
 
@@ -1046,7 +1110,7 @@ export default function Home() {
     ) {
       // normalize locally then let them click again (prevents 0/0 no-op swaps)
       setEntries((prev) => {
-        pushUndoSnapshot(prev);
+        /* undo now handled via useUndoHistory */
         return ensureQueueOrderList(prev);
       });
       fireToast("Order normalized — try again", "info");
@@ -1058,7 +1122,7 @@ export default function Home() {
 
     // optimistic local swap
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
+      /* undo now handled via useUndoHistory */
       const next = prev.map((e) => {
         const eid = String(e.id);
         if (eid === String(swappedA.id))
@@ -1088,6 +1152,30 @@ export default function Home() {
         }),
       ]);
       setRemoteOnline(true);
+
+      undoHistory.pushAction({
+        type: "REORDER",
+        description: `Moved ${a.name || "group"} ${direction === "UP" ? "up" : "down"}`,
+        reverse: async () => {
+          await Promise.all([
+            statePut({
+              op: "PATCH_ENTRY",
+              payload: {
+                id: a.id,
+                patch: toDbPatchFromUi({ queueOrder: aOrder }),
+              },
+            }),
+            statePut({
+              op: "PATCH_ENTRY",
+              payload: {
+                id: b.id,
+                patch: toDbPatchFromUi({ queueOrder: bOrder }),
+              },
+            }),
+          ]);
+          refreshFromServer();
+        },
+      });
     } catch (err) {
       console.error("PATCH_ENTRY (moveWaiting) failed:", err);
       setRemoteOnline(false);
@@ -1146,7 +1234,7 @@ export default function Home() {
 
         if (!changed) return prev;
 
-        pushUndoSnapshot(prev);
+        /* undo now handled via useUndoHistory */
 
         if (transitioned.length) {
           Promise.all(
@@ -1188,8 +1276,22 @@ export default function Home() {
 
     const coerced = { ...updated, partySize, linesUsed };
 
+    // Snapshot prior state for undo
+    const before = entriesRef.current.find(
+      (e) => String(e.id) === String(coerced.id),
+    );
+    const prevPatch = before
+      ? {
+          name: before.name,
+          ...(!isUp ? { partySize: before.partySize } : {}),
+          phone: before.phone,
+          notes: before.notes,
+          linesUsed: before.linesUsed,
+          assignedTag: before.assignedTag ?? null,
+        }
+      : null;
+
     setEntries((prev) => {
-      pushUndoSnapshot(prev);
       return prev.map((e) =>
         String(e.id) === String(coerced.id) ? coerced : e,
       );
@@ -1221,6 +1323,20 @@ export default function Home() {
 
       await statePut({ op: "PATCH_ENTRY", payload: { id: coerced.id, patch } });
       setRemoteOnline(true);
+
+      if (prevPatch) {
+        undoHistory.pushAction({
+          type: "EDIT",
+          description: `Edited ${before.name || "group"}`,
+          reverse: async () => {
+            await statePut({
+              op: "PATCH_ENTRY",
+              payload: { id: coerced.id, patch: toDbPatchFromUi(prevPatch) },
+            });
+            refreshFromServer();
+          },
+        });
+      }
     } catch (err) {
       console.error("PATCH_ENTRY (saveEdit) failed:", err);
       setRemoteOnline(false);
@@ -1331,8 +1447,6 @@ export default function Home() {
         availableLines={availableLines}
         totalLines={settings.totalLines}
         onClearAll={clearAll}
-        onUndo={undoLast}
-        canUndo={undoStack.length > 0}
         onArchiveToday={doArchiveToday}
         onOpenClient={openClient}
         onOpenPrint={openPrint}
@@ -1341,6 +1455,21 @@ export default function Home() {
         leadModeActive={leadModeActive}
         onLeadMode={() => setLeadPinOpen(true)}
         onLeadModeOff={() => setLeadModeActive(false)}
+        undoSlot={
+          <UndoHistoryPanel
+            actions={undoHistory.actions}
+            onUndo={async (id) => {
+              const res = await undoHistory.undo(id);
+              if (res?.ok) {
+                fireToast("Undone", "success");
+                refreshFromServer();
+              } else {
+                fireToast(res?.error || "Undo failed", "warning");
+              }
+            }}
+            onClear={undoHistory.clear}
+          />
+        }
       />
 
       <FlowPausedBanner settings={settings} />

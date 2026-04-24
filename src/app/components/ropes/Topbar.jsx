@@ -10,8 +10,6 @@ export default function Topbar({
   availableLines,
   totalLines,
   onClearAll,
-  onUndo,
-  canUndo,
   onArchiveToday,
   onOpenClient,
   onOpenPrint,
@@ -24,6 +22,9 @@ export default function Topbar({
   leadModeActive = false,
   onLeadMode,
   onLeadModeOff,
+
+  // Undo panel slot
+  undoSlot,
 }) {
   const [clearOpen, setClearOpen] = useState(false);
   const [clearModalKey, setClearModalKey] = useState(0);
@@ -65,15 +66,7 @@ export default function Topbar({
             Client
           </button>
 
-          <button
-            className="button"
-            type="button"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title={!canUndo ? "Nothing to undo" : "Undo last action"}
-          >
-            Undo
-          </button>
+          {undoSlot}
 
           {/*   popup button */}
           {/* <button

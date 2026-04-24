@@ -9,6 +9,7 @@ export default function TopHeader({
   courseCount,
   waitingCount,
   settings,
+  undoSlot,
 }) {
   return (
     <div className="topbar">
@@ -42,17 +43,14 @@ export default function TopHeader({
 
           {/* ✅ pass DB-backed settings down */}
           <FlowControlButton className="button" settings={settings} />
+
+          {undoSlot}
         </div>
 
         {/* RIGHT: Status cards */}
         <div
           className="card topbarStatus"
-          style={{
-            padding: 12,
-            display: "grid",
-            gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-            gap: 10,
-          }}
+          style={{ padding: 12 }}
         >
           <div className="item" style={{ padding: 10 }}>
             <div className="muted" style={{ fontSize: 13 }}>

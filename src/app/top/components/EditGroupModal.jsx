@@ -4,6 +4,7 @@ export default function EditGroupModal({
   setEditDraft,
   closeEdit,
   saveEdit,
+  tagOptions = [],
 }) {
   if (!open) return null;
 
@@ -105,6 +106,32 @@ export default function EditGroupModal({
                   setEditDraft((d) => ({ ...d, notes: e.target.value }))
                 }
               />
+            </div>
+          </div>
+
+          <div
+            className="row"
+            style={{ gap: 12, marginTop: 12, flexWrap: "wrap" }}
+          >
+            <div style={{ flex: "1 1 260px" }}>
+              <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
+                Group Tag
+              </div>
+              <select
+                className="input"
+                style={{ width: "100%", padding: 10 }}
+                value={editDraft.assignedTag ?? ""}
+                onChange={(e) =>
+                  setEditDraft((d) => ({ ...d, assignedTag: e.target.value }))
+                }
+              >
+                <option value="">No tag</option>
+                {tagOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

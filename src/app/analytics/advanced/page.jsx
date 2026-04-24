@@ -164,7 +164,7 @@ export default function AdvancedSearchPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
             gap: 12,
           }}
         >

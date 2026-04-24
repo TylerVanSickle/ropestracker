@@ -1197,9 +1197,13 @@ body {
   width: 100%;
 }
 
+.topbarStatus,
 .topbarStatusCard {
   margin-left: auto; /* push to the right */
   min-width: 320px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
 }
 
 /* stack at 900px and below */
@@ -1208,14 +1212,20 @@ body {
     flex-direction: column;
   }
 
+  .topbarStatus,
   .topbarStatusCard {
     margin-left: 0;
     width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@media (max-width: 900px) {
+
+/* phones: 2 columns */
+@media (max-width: 520px) {
+  .topbarStatus,
   .topbarStatusCard {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

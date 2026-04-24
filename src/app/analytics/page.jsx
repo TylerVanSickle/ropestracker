@@ -622,7 +622,7 @@ export default function AnalyticsPage() {
             padding: 14,
             display: "grid",
             gap: 12,
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             alignItems: "start",
             borderRadius: 16,
           }}
