@@ -23,6 +23,8 @@ import OperatorNotesSection from "./components/OperatorNotesSection";
 import EditGroupModal from "./components/EditGroupModal";
 import SplitGroupModal from "./components/SplitGroupModal";
 import TopSoundController from "@/app/components/ropes/TopSoundController";
+import UndoHistoryPanel from "@/app/components/ropes/UndoHistoryPanel";
+import useUndoHistory from "@/app/lib/useUndoHistory";
 
 import {
   entryTintStyle,
@@ -196,6 +198,9 @@ export default function TopRopesPage() {
 
   // Split modal state
   const [splitEntry, setSplitEntry] = useState(null);
+
+  // Undo history
+  const undoHistory = useUndoHistory();
 
   // Finish confirm
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
@@ -419,7 +424,20 @@ export default function TopRopesPage() {
   }
 
   function handleAssignTag(entryId, tag) {
-    patchEntryRemote(entryId, { assignedTag: tag || null });
+    const before = entries.find((e) => e.id === entryId);
+    const prevTag = before?.assignedTag ?? null;
+    const newTag = tag || null;
+    if (prevTag === newTag) return;
+
+    patchEntryRemote(entryId, { assignedTag: newTag });
+
+    undoHistory.pushAction({
+      type: "TAG",
+      description: `Set tag "${newTag || "none"}" on ${before?.name || "group"}`,
+      reverse: async () => {
+        await patchEntryRemote(entryId, { assignedTag: prevTag });
+      },
+    });
   }
 
   function handleStartCourse(entry) {
@@ -432,6 +450,14 @@ export default function TopRopesPage() {
     const linesNeeded = Math.max(1, Number(entry.partySize || 1));
     const nowISO = new Date().toISOString();
 
+    const prev = {
+      coursePhase: entry.coursePhase ?? null,
+      linesUsed: entry.linesUsed ?? null,
+      startedAt: entry.startedAt ?? null,
+      startTime: entry.startTime ?? null,
+      endTime: entry.endTime ?? null,
+    };
+
     patchEntryRemote(entry.id, {
       coursePhase: "ON_COURSE",
       linesUsed: Number.isFinite(Number(entry.linesUsed))
@@ -440,6 +466,14 @@ export default function TopRopesPage() {
       startedAt: entry.startedAt || nowISO,
       startTime: nowISO,
       endTime: isoPlusMinutes(TOP_MIN),
+    });
+
+    undoHistory.pushAction({
+      type: "START_COURSE",
+      description: `Started ${entry.name || "group"} on course`,
+      reverse: async () => {
+        await patchEntryRemote(entry.id, prev);
+      },
     });
   }
 
@@ -451,8 +485,17 @@ export default function TopRopesPage() {
     const base =
       currentEnd && !isNaN(currentEnd.getTime()) ? currentEnd : new Date();
     const nextEnd = new Date(base.getTime() + 5 * 60 * 1000).toISOString();
+    const prevEnd = entry.endTime;
 
     patchEntryRemote(entryId, { endTime: nextEnd });
+
+    undoHistory.pushAction({
+      type: "EXTEND",
+      description: `+5 min on ${entry.name || "group"}`,
+      reverse: async () => {
+        await patchEntryRemote(entryId, { endTime: prevEnd });
+      },
+    });
   }
 
   function openFinishConfirm(entry) {
@@ -471,11 +514,14 @@ export default function TopRopesPage() {
 
     setFinishSaving(true);
 
+    // Snapshot before removing (for undo)
+    const snap = { ...finishEntry };
+
     // optimistic local (remove)
     setEntries((prev) => prev.filter((e) => e.id !== finishEntry.id));
 
     try {
-      await statePut({
+      const resp = await statePut({
         op: "MOVE_TO_HISTORY",
         payload: {
           id: finishEntry.id,
@@ -486,6 +532,44 @@ export default function TopRopesPage() {
 
       setRemoteOnline(true);
       refreshFromServer();
+
+      const historyId = resp?.history_id || null;
+
+      undoHistory.pushAction({
+        type: "FINISH",
+        description: `Finished ${snap.name || "group"}`,
+        reverse: async () => {
+          // Recreate the entry in live with prior state
+          await statePut({
+            op: "CREATE_ENTRY",
+            payload: {
+              name: snap.name,
+              party_size: snap.partySize,
+              lines_used: snap.linesUsed ?? snap.partySize,
+              phone: snap.phone ?? null,
+              notes: snap.notes ?? null,
+              status: snap.status || "UP",
+              course_phase: snap.coursePhase || "ON_COURSE",
+              assigned_tag: snap.assignedTag ?? null,
+              sent_up_at: snap.sentUpAt ?? null,
+              started_at: snap.startedAt ?? null,
+              created_at: snap.createdAt ?? null,
+            },
+          });
+          // Clean up the history row we just created
+          if (historyId) {
+            try {
+              await statePut({
+                op: "DELETE_FROM_HISTORY",
+                payload: { id: historyId },
+              });
+            } catch {
+              // not fatal — live entry is restored regardless
+            }
+          }
+          refreshFromServer();
+        },
+      });
     } catch {
       setRemoteOnline(false);
       showToast("Finished locally — couldn’t sync", "warning");
@@ -510,16 +594,29 @@ export default function TopRopesPage() {
       partySize: String(entry.linesUsed ?? entry.partySize ?? ""),
       phone: String(entry.phone ?? ""),
       notes: String(entry.notes ?? ""),
+      assignedTag: String(entry.assignedTag ?? ""),
     });
   }
 
   function closeEdit() {
     setEditingId(null);
-    setEditDraft({ name: "", partySize: "", phone: "", notes: "" });
+    setEditDraft({
+      name: "",
+      partySize: "",
+      phone: "",
+      notes: "",
+      assignedTag: "",
+    });
   }
 
   async function saveEdit() {
     if (!editingId) return;
+
+    const before = entries.find((e) => e.id === editingId);
+    if (!before) {
+      closeEdit();
+      return;
+    }
 
     const name = String(editDraft.name || "")
       .trim()
@@ -534,6 +631,15 @@ export default function TopRopesPage() {
     const notes = String(editDraft.notes || "")
       .trim()
       .slice(0, 120);
+    const assignedTag = String(editDraft.assignedTag || "").trim() || null;
+
+    const prev = {
+      name: before.name ?? "",
+      linesUsed: before.linesUsed ?? null,
+      phone: before.phone ?? "",
+      notes: before.notes ?? "",
+      assignedTag: before.assignedTag ?? null,
+    };
 
     // Only update linesUsed — never overwrite partySize so analytics always
     // records the original registered group size, not an operational adjustment
@@ -542,6 +648,15 @@ export default function TopRopesPage() {
       linesUsed: linesUsedNum,
       phone,
       notes,
+      assignedTag,
+    });
+
+    undoHistory.pushAction({
+      type: "EDIT",
+      description: `Edited ${before.name || "group"}`,
+      reverse: async () => {
+        await patchEntryRemote(editingId, prev);
+      },
     });
 
     showToast("Saved", "success");
@@ -663,6 +778,46 @@ export default function TopRopesPage() {
 
       setRemoteOnline(true);
       clearMerge();
+
+      // Capture full snapshots for undo
+      const primarySnapshot = {
+        party_size: a.partySize,
+        lines_used: a.linesUsed ?? a.partySize,
+        notes: a.notes ?? null,
+        merge_history: null,
+      };
+      const secondarySnapshot = {
+        name: b.name,
+        party_size: b.partySize,
+        lines_used: b.linesUsed ?? b.partySize,
+        phone: b.phone ?? null,
+        notes: b.notes ?? null,
+        status: b.status ?? "UP",
+        course_phase: b.coursePhase ?? "SENT",
+        assigned_tag: b.assignedTag ?? null,
+        sent_up_at: b.sentUpAt ?? null,
+        started_at: b.startedAt ?? null,
+        created_at: b.createdAt ?? null,
+      };
+
+      undoHistory.pushAction({
+        type: "MERGE",
+        description: `Merged ${a.name} + ${b.name}`,
+        reverse: async () => {
+          // Restore primary’s pre-merge state and recreate secondary
+          await Promise.all([
+            statePut({
+              op: "PATCH_ENTRY",
+              payload: { id: primaryId, patch: primarySnapshot },
+            }),
+            statePut({
+              op: "CREATE_ENTRY",
+              payload: secondarySnapshot,
+            }),
+          ]);
+          refreshFromServer();
+        },
+      });
     } catch {
       setRemoteOnline(false);
       showToast("Merged locally — couldn’t sync", "warning");
@@ -682,6 +837,21 @@ export default function TopRopesPage() {
     if (!entry?.id || !groupSizes?.length) return;
 
     const parentName = entry.name || "Group";
+
+    // Snapshot original for undo
+    const originalSnapshot = {
+      name: entry.name,
+      party_size: entry.partySize,
+      lines_used: entry.linesUsed ?? entry.partySize,
+      phone: entry.phone ?? null,
+      notes: entry.notes ?? null,
+      status: entry.status ?? "UP",
+      course_phase: entry.coursePhase ?? "SENT",
+      assigned_tag: entry.assignedTag ?? null,
+      sent_up_at: entry.sentUpAt ?? null,
+      started_at: entry.startedAt ?? null,
+      created_at: entry.createdAt ?? null,
+    };
 
     // Create sub-group entries, delete the original
     // Each sub-group inherits the parent's sent-up state
@@ -730,14 +900,36 @@ export default function TopRopesPage() {
     });
 
     try {
-      await Promise.all([
+      const results = await Promise.all([
         ...createOps,
         statePut({ op: "DELETE_ENTRY", payload: { id: entry.id } }),
       ]);
+      // First N results are the create responses; last is the delete
+      const createdIds = results
+        .slice(0, groupSizes.length)
+        .map((r) => r?.entry?.id)
+        .filter(Boolean);
+
       setRemoteOnline(true);
       closeSplit();
       showToast(`Split into ${groupSizes.length} groups`, "success");
       refreshFromServer();
+
+      undoHistory.pushAction({
+        type: "SPLIT",
+        description: `Split ${parentName} into ${groupSizes.length} groups`,
+        reverse: async () => {
+          // Delete the sub-groups and recreate the original
+          const deleteOps = createdIds.map((id) =>
+            statePut({ op: "DELETE_ENTRY", payload: { id } }),
+          );
+          await Promise.all([
+            ...deleteOps,
+            statePut({ op: "CREATE_ENTRY", payload: originalSnapshot }),
+          ]);
+          refreshFromServer();
+        },
+      });
     } catch {
       setRemoteOnline(false);
       showToast("Split locally — couldn't sync", "warning");
@@ -852,6 +1044,21 @@ export default function TopRopesPage() {
         remoteOnline={remoteOnline}
         onPauseFlow={pauseFlow}
         onResumeFlow={resumeFlow}
+        undoSlot={
+          <UndoHistoryPanel
+            actions={undoHistory.actions}
+            onUndo={async (id) => {
+              const res = await undoHistory.undo(id);
+              if (res?.ok) {
+                showToast("Undone", "success");
+                refreshFromServer();
+              } else {
+                showToast(res?.error || "Undo failed", "warning");
+              }
+            }}
+            onClear={undoHistory.clear}
+          />
+        }
       />
 
       <div className="topBody">
@@ -928,6 +1135,11 @@ export default function TopRopesPage() {
         setEditDraft={setEditDraft}
         closeEdit={closeEdit}
         saveEdit={saveEdit}
+        tagOptions={
+          editingId
+            ? tagOptionsForEntry(entries.find((e) => e.id === editingId))
+            : []
+        }
       />
 
       <SplitGroupModal

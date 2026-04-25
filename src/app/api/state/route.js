@@ -151,6 +151,26 @@ export async function PUT(req) {
       return NextResponse.json({ ok: true });
     }
 
+    // Delete a history row (used by undo-finish to clean up after restoring to live)
+    if (op === "DELETE_FROM_HISTORY") {
+      const id = payload?.id;
+      if (!id) {
+        return NextResponse.json(
+          { ok: false, error: "Missing history id." },
+          { status: 400 },
+        );
+      }
+
+      const { error } = await sb
+        .from("ropes_entries_history")
+        .delete()
+        .eq("site_id", siteId)
+        .eq("id", id);
+
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+
     /**
      * Move one entry to history (DONE / ARCHIVED)
      */
@@ -206,9 +226,11 @@ export async function PUT(req) {
         merge_history: live.merge_history ?? null,
       };
 
-      const { error: he } = await sb
+      const { data: histInserted, error: he } = await sb
         .from("ropes_entries_history")
-        .insert(historyRow);
+        .insert(historyRow)
+        .select("id")
+        .single();
       if (he) throw he;
 
       const { error: de } = await sb
@@ -219,7 +241,11 @@ export async function PUT(req) {
 
       if (de) throw de;
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({
+        ok: true,
+        history_id: histInserted?.id || null,
+        live_snapshot: live,
+      });
     }
 
     /**
