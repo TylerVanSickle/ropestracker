@@ -9,7 +9,11 @@ const supabase = createClient(
 
 const SITE_ID = process.env.NEXT_PUBLIC_ROPES_SITE_ID; // UUID from ropes_sites.id
 
-export async function GET() {
+function digitsOnly(s) {
+  return String(s || "").replace(/\D/g, "");
+}
+
+export async function GET(req) {
   try {
     if (!SITE_ID) {
       return NextResponse.json(
@@ -18,16 +22,31 @@ export async function GET() {
       );
     }
 
+    const { searchParams } = new URL(req.url);
+    const phoneFilter = digitsOnly(searchParams.get("phone") || "");
+
     const { data, error } = await supabase
       .from("ropes_flag_archive")
       .select("*")
       .eq("site_id", SITE_ID)
       .order("archived_at", { ascending: false })
-      .limit(300);
+      .limit(500);
 
     if (error) throw error;
 
-    return NextResponse.json({ records: data || [] });
+    let records = Array.isArray(data) ? data : [];
+
+    // Filter by phone (digits-only match) if requested
+    if (phoneFilter && phoneFilter.length >= 7) {
+      records = records.filter((r) => {
+        const stored = digitsOnly(r?.entry_snapshot?.phone);
+        if (!stored) return false;
+        // Match if either string ends with the other (handles 10-digit vs 11-digit with country code)
+        return stored.endsWith(phoneFilter) || phoneFilter.endsWith(stored);
+      });
+    }
+
+    return NextResponse.json({ records, count: records.length });
   } catch (e) {
     return NextResponse.json(
       { error: e?.message || "Failed to load archive" },
