@@ -623,7 +623,7 @@ export default function TopRopesPage() {
       .slice(0, 40);
     const linesUsedNum = Math.max(
       1,
-      Math.min(20, Number(editDraft.partySize || 1)),
+      Math.min(20, Math.floor(Number(editDraft.partySize || 1))),
     );
     const phone = String(editDraft.phone || "")
       .trim()
@@ -669,6 +669,16 @@ export default function TopRopesPage() {
   const sentCount = sentUp.length;
   const courseCount = onCourse.length;
   const waitingCount = waiting.length;
+
+  // People (sum of linesUsed / partySize) for each section
+  const sumPeople = (list) =>
+    list.reduce(
+      (n, e) => n + Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1)),
+      0,
+    );
+  const sentPeople = sumPeople(sentUp);
+  const coursePeople = sumPeople(onCourse);
+  const waitingPeople = sumPeople(waiting);
 
   // ===== Merge =====
   function toggleMergeSelect(entryId) {
@@ -1040,6 +1050,9 @@ export default function TopRopesPage() {
         sentCount={sentCount}
         courseCount={courseCount}
         waitingCount={waitingCount}
+        sentPeople={sentPeople}
+        coursePeople={coursePeople}
+        waitingPeople={waitingPeople}
         settings={settings}
         remoteOnline={remoteOnline}
         onPauseFlow={pauseFlow}

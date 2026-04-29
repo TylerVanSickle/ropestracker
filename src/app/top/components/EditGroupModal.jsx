@@ -63,15 +63,19 @@ export default function EditGroupModal({
               </div>
               <input
                 className="input"
+                type="number"
+                min="1"
+                max="20"
+                step="1"
                 style={{ width: "100%", padding: 10 }}
                 value={editDraft.partySize}
-                onChange={(e) =>
-                  setEditDraft((d) => ({
-                    ...d,
-                    partySize: e.target.value,
-                  }))
-                }
+                onChange={(e) => {
+                  // Strip any non-digit characters (blocks decimals/negatives)
+                  const raw = String(e.target.value || "").replace(/\D/g, "");
+                  setEditDraft((d) => ({ ...d, partySize: raw }));
+                }}
                 inputMode="numeric"
+                pattern="[0-9]*"
               />
             </div>
           </div>

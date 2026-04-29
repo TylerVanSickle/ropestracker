@@ -594,6 +594,7 @@ export async function archiveFlaggedEntry({
       startedAt: target.startedAt ?? null,
       assignedTag: target.assignedTag ?? null,
       queueOrder: target.queueOrder ?? null,
+      mergeHistory: Array.isArray(target.mergeHistory) ? target.mergeHistory : null,
     },
     guestNotes: Array.isArray(guestNotes) ? guestNotes : [],
   };

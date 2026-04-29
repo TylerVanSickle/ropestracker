@@ -8,6 +8,9 @@ export default function TopHeader({
   sentCount,
   courseCount,
   waitingCount,
+  sentPeople = 0,
+  coursePeople = 0,
+  waitingPeople = 0,
   settings,
   undoSlot,
 }) {
@@ -74,21 +77,45 @@ export default function TopHeader({
             <div className="muted" style={{ fontSize: 13 }}>
               Coming Up
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{sentCount}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {sentCount}{" "}
+              <span
+                className="muted"
+                style={{ fontSize: 12, fontWeight: 500 }}
+              >
+                · {sentPeople}p
+              </span>
+            </div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>
             <div className="muted" style={{ fontSize: 13 }}>
               On Course
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{courseCount}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {courseCount}{" "}
+              <span
+                className="muted"
+                style={{ fontSize: 12, fontWeight: 500 }}
+              >
+                · {coursePeople}p
+              </span>
+            </div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>
             <div className="muted" style={{ fontSize: 13 }}>
               Waiting
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{waitingCount}</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {waitingCount}{" "}
+              <span
+                className="muted"
+                style={{ fontSize: 12, fontWeight: 500 }}
+              >
+                · {waitingPeople}p
+              </span>
+            </div>
           </div>
 
           <div className="item" style={{ padding: 10 }}>

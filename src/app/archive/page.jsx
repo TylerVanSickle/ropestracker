@@ -144,6 +144,53 @@ export default function ArchivePage() {
                     </div>
                   ) : null}
 
+                  {Array.isArray(e.mergeHistory) && e.mergeHistory.length > 0 ? (
+                    <div style={{ marginTop: 10 }}>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        Original Groups (before merge)
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          padding: 10,
+                          background: "var(--color-bg)",
+                          borderRadius: 10,
+                          border: "1px solid var(--color-border)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
+                        {e.mergeHistory.map((g, i) => (
+                          <div key={g.id || i}>
+                            <div style={{ fontWeight: 700 }}>
+                              {g.name || "—"}{" "}
+                              <span
+                                className="muted"
+                                style={{ fontWeight: 400 }}
+                              >
+                                — group of {g.partySize || "?"}
+                              </span>
+                            </div>
+                            <div
+                              className="muted"
+                              style={{ fontSize: 12, marginTop: 2 }}
+                            >
+                              Phone:{" "}
+                              <strong>
+                                {g.phone && g.phone !== "0"
+                                  ? g.phone
+                                  : "No phone"}
+                              </strong>
+                              {g.assignedTag ? ` • Tag: ${g.assignedTag}` : ""}
+                              {g.notes ? ` • Notes: ${g.notes}` : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {Array.isArray(guestNotes) && guestNotes.length ? (
                     <div style={{ marginTop: 12 }}>
                       <div className="muted" style={{ fontSize: 12 }}>
