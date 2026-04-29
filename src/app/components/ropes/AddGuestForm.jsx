@@ -302,7 +302,7 @@ export default function AddGuestForm({
             <div style={{ fontWeight: 700 }}>
               {escalated ? "🚨" : "⚠️"} This phone matches{" "}
               {matchCount} prior archive{matchCount === 1 ? "" : "s"}
-              {escalated ? " — repeat offender" : ""}
+              {escalated ? " repeat offender" : ""}
             </div>
             <div style={{ fontSize: 13 }}>
               Most recent: <strong>{matches[0]?.reason || "—"}</strong>
@@ -356,7 +356,7 @@ export default function AddGuestForm({
                 color: escalated ? "var(--danger, #b91c1c)" : "#92400e",
               }}
             >
-              {escalated ? "🚨 Repeat offender" : "⚠️ Prior archive on file"}
+              {escalated ? "Repeat offender" : "⚠️ Prior archive on file"}
             </div>
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
               This phone has been archived {matchCount} time
