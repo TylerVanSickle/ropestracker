@@ -68,32 +68,9 @@ export default function Topbar({
 
           {undoSlot}
 
-          {/*   popup button */}
-          {/* <button
-            className="button"
-            type="button"
-            onClick={onOpenReservations}
-            title="View reservations"
-          >
-            Reservations{" "}
-            <span
-              style={{
-                marginLeft: 8,
-                display: "inline-flex",
-                minWidth: 22,
-                height: 18,
-                padding: "0 6px",
-                borderRadius: 999,
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 12,
-                border: "1px solid rgba(255,255,255,0.18)",
-                opacity: 0.9,
-              }}
-            >
-              {reservationsCount}
-            </span>
-          </button> */}
+          <Link className="button" href="/reservations">
+            Reservations
+          </Link>
 
           <button
             className="button"
@@ -132,9 +109,6 @@ export default function Topbar({
           </Link>
           <Link className="button" href="/analytics">
             Analytics
-          </Link>
-          <Link className="button" href="/admin/qr">
-            QR Codes
           </Link>
         </div>
       </div>

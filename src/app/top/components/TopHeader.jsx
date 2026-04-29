@@ -40,6 +40,10 @@ export default function TopHeader({
             Archive
           </Link>
 
+          <Link className="button" href="/reservations">
+            Reservations
+          </Link>
+
           <Link className="button" href="/settings" target="_blank">
             Settings
           </Link>

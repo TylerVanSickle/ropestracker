@@ -44,6 +44,7 @@ import { buildNotifyMessage } from "@/app/lib/ropesMessage";
 
 import FlowPausedBanner from "@/app/components/ropes/FlowPausedBanner";
 import CourseClosedBanner from "./components/ropes/CourseClosedBanner";
+import ReservationsBanner from "@/app/components/ropes/ReservationsBanner";
 
 import { computeAlerts } from "@/app/lib/alerts";
 import AlertToast from "@/app/components/ropes/AlertToast";
@@ -1474,6 +1475,7 @@ export default function Home() {
 
       <FlowPausedBanner settings={settings} />
       <CourseClosedBanner settings={settings} />
+      <ReservationsBanner />
 
       <CollapsibleCard title="Next up actions" defaultOpen={false}>
         <NextUpActions

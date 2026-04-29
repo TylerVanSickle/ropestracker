@@ -25,6 +25,7 @@ import SplitGroupModal from "./components/SplitGroupModal";
 import TopSoundController from "@/app/components/ropes/TopSoundController";
 import UndoHistoryPanel from "@/app/components/ropes/UndoHistoryPanel";
 import useUndoHistory from "@/app/lib/useUndoHistory";
+import ReservationsBanner from "@/app/components/ropes/ReservationsBanner";
 
 import {
   entryTintStyle,
@@ -1073,6 +1074,8 @@ export default function TopRopesPage() {
           />
         }
       />
+
+      <ReservationsBanner />
 
       <div className="topBody">
         <div style={{ display: "grid", gap: 14 }}>

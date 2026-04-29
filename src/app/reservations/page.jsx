@@ -1,446 +1,663 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import ConfirmModal from "@/app/components/ropes/ConfirmModal";
+import AddReservationForm from "./AddReservationForm";
+import EditReservationModal from "./EditReservationModal";
 import {
-  loadEntries,
-  loadSettings,
-  saveEntries,
-  uid,
-  subscribeToRopesStorage,
-  LIMITS,
-  clampText,
-  clampInt,
-  digitsOnlyMax,
-} from "@/app/lib/ropesStore";
+  EVENT_TYPES,
+  eventTypeLabel,
+  fmtReservationDate,
+  fmtReservationTime,
+  bucketReservations,
+  formatPhoneUS,
+} from "@/app/lib/reservations";
 
-import { ensureQueueOrder } from "@/app/lib/ropesUtils";
+const STATUS_COLORS = {
+  PENDING: { bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.4)", color: "#1d4ed8" },
+  CHECKED_IN: { bg: "rgba(34, 197, 94, 0.12)", border: "rgba(34, 197, 94, 0.4)", color: "#15803d" },
+  CANCELLED: { bg: "rgba(107, 114, 128, 0.12)", border: "rgba(107, 114, 128, 0.4)", color: "#374151" },
+  NO_SHOW: { bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.4)", color: "#b91c1c" },
+  COMPLETED: { bg: "rgba(168, 85, 247, 0.12)", border: "rgba(168, 85, 247, 0.4)", color: "#7e22ce" },
+};
 
-function toLocalDatetimeValue(d) {
-  const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+function StatusPill({ status }) {
+  const s = STATUS_COLORS[status] || STATUS_COLORS.PENDING;
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        fontWeight: 700,
+        padding: "2px 8px",
+        borderRadius: 10,
+        background: s.bg,
+        border: `1px solid ${s.border}`,
+        color: s.color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {String(status || "").replace("_", " ")}
+    </span>
+  );
 }
 
-function parseLocalDatetimeToISO(value) {
-  if (!value) return "";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString();
+function ReservationCard({ r, onCheckIn, onCancel, onDelete, onEdit }) {
+  const isPending = r.status === "PENDING";
+  return (
+    <div
+      style={{
+        padding: 14,
+        borderRadius: 12,
+        border: "1px solid var(--color-border)",
+        background: "var(--color-card)",
+        boxShadow: "var(--shadow-sm)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontSize: 18, fontWeight: 800 }}>{r.name}</span>
+            <span className="pill">
+              {r.party_size} {r.party_size === 1 ? "person" : "people"}
+            </span>
+            <span className="pill">{eventTypeLabel(r.event_type)}</span>
+            <StatusPill status={r.status} />
+          </div>
+
+          <div
+            className="muted"
+            style={{
+              fontSize: 13,
+              marginTop: 6,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <span>
+              <strong style={{ color: "var(--color-text)" }}>
+                {fmtReservationDate(r.reserved_at)}
+              </strong>{" "}
+              at{" "}
+              <strong style={{ color: "var(--color-text)" }}>
+                {fmtReservationTime(r.reserved_at)}
+              </strong>
+            </span>
+            {r.phone ? (
+              <a
+                href={`tel:${r.phone.replace(/\D/g, "")}`}
+                style={{ color: "inherit", textDecoration: "none" }}
+              >
+                {formatPhoneUS(r.phone)}
+              </a>
+            ) : null}
+          </div>
+
+          {r.notes ? (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 10px",
+                background: "var(--color-bg)",
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              {r.notes}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
+          {isPending && (
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => onCheckIn(r)}
+              style={{ fontSize: 13, padding: "6px 12px" }}
+            >
+              Check in
+            </button>
+          )}
+          <button
+            className="button"
+            type="button"
+            onClick={() => onEdit(r)}
+            style={{ fontSize: 13, padding: "6px 12px" }}
+          >
+            Edit
+          </button>
+          {isPending && (
+            <button
+              className="button"
+              type="button"
+              onClick={() => onCancel(r)}
+              style={{ fontSize: 13, padding: "6px 12px" }}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            className="button"
+            type="button"
+            onClick={() => onDelete(r)}
+            style={{
+              fontSize: 13,
+              padding: "6px 12px",
+              color: "var(--danger, #b91c1c)",
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function formatPhone(digits) {
-  const d = String(digits || "")
-    .replace(/\D/g, "")
-    .slice(0, 10);
-  if (!d) return "";
-  if (d.length <= 3) return `(${d}`;
-  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+function Section({ title, count, children, accentColor }) {
+  return (
+    <section className="card spacer-md" style={{ padding: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        {accentColor ? (
+          <div
+            style={{
+              width: 4,
+              height: 20,
+              background: accentColor,
+              borderRadius: 4,
+            }}
+          />
+        ) : null}
+        <h2 className="section-title" style={{ margin: 0, fontSize: 18 }}>
+          {title}
+        </h2>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 10,
+            background: "var(--color-bg)",
+            color: "var(--color-muted)",
+          }}
+        >
+          {count}
+        </span>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 export default function ReservationsPage() {
-  const [settings, setSettings] = useState(() => loadSettings());
-  const [entries, setEntries] = useState(() => ensureQueueOrder(loadEntries()));
+  const [reservations, setReservations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const [now, setNow] = useState(() => new Date());
 
-  const refreshFromStorage = () => {
-    setSettings(loadSettings());
-    setEntries(ensureQueueOrder(loadEntries()));
-  };
+  // Modals
+  const [editTarget, setEditTarget] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  // Filters
+  const [filterType, setFilterType] = useState("ALL");
+  const [showStatus, setShowStatus] = useState({
+    PENDING: true,
+    CHECKED_IN: false,
+    CANCELLED: false,
+    NO_SHOW: false,
+    COMPLETED: false,
+  });
 
   useEffect(() => {
-    const unsub = subscribeToRopesStorage(refreshFromStorage);
-    return () => unsub?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
+    const t = setInterval(() => setNow(new Date()), 60 * 1000);
     return () => clearInterval(t);
   }, []);
 
+  async function load() {
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/reservations", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to load reservations");
+      }
+      setReservations(Array.isArray(data.reservations) ? data.reservations : []);
+    } catch (e) {
+      setErr(e?.message || "Failed to load reservations");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    saveEntries(entries);
-  }, [entries]);
+    load();
+  }, []);
 
-  const totalLines = clampInt(settings.totalLines ?? 10, 1, 15);
-
-  const [form, setForm] = useState(() => {
-    const in20 = new Date(Date.now() + 20 * 60 * 1000);
-    return {
-      name: "",
-      phoneDigits: "",
-      partySizeInput: "1", //   string input so backspace works
-      notes: "",
-      reserveAtLocal: toLocalDatetimeValue(in20),
-    };
-  });
-
-  const reserved = useMemo(() => {
-    return entries
-      .filter((e) => e.status === "RESERVED")
-      .slice()
-      .sort((a, b) => {
-        const atA = a.reserveAtISO ? new Date(a.reserveAtISO).getTime() : 0;
-        const atB = b.reserveAtISO ? new Date(b.reserveAtISO).getTime() : 0;
-        return atA - atB;
+  // Returns true on success so the form can clear itself.
+  async function handleCreate(payload) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
       });
-  }, [entries]);
-
-  const { dueNow, upcoming } = useMemo(() => {
-    const nowMs = Date.now();
-    const due = [];
-    const up = [];
-    for (const e of reserved) {
-      const at = e.reserveAtISO ? new Date(e.reserveAtISO).getTime() : 0;
-      if (at && !Number.isNaN(at) && at <= nowMs) due.push(e);
-      else up.push(e);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Save failed");
+      }
+      await load();
+      return true;
+    } catch (e) {
+      alert(e?.message || "Failed to create reservation");
+      return false;
+    } finally {
+      setSaving(false);
     }
-    return { dueNow: due, upcoming: up };
-  }, [reserved]);
-
-  function updateForm(patch) {
-    setForm((prev) => ({ ...prev, ...patch }));
   }
 
-  function addReservation(e) {
-    e.preventDefault();
-
-    const name = clampText(form.name, LIMITS.entryName).trim();
-    if (!name) return;
-
-    // REQUIRED phone (store digits)
-    const phoneDigits = digitsOnlyMax(form.phoneDigits, LIMITS.entryPhone);
-    const phone = String(phoneDigits || "")
-      .replace(/\D/g, "")
-      .slice(0, 10);
-    if (phone.length !== 10) {
-      alert("Enter a valid 10-digit phone number.");
-      return;
+  async function handleUpdate(payload) {
+    if (!editTarget?.id) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: editTarget.id, ...payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Save failed");
+      }
+      setEditTarget(null);
+      await load();
+    } catch (e) {
+      alert(e?.message || "Failed to update reservation");
+    } finally {
+      setSaving(false);
     }
+  }
 
-    const notes = clampText(form.notes, LIMITS.entryIntakeNotes).trim();
-
-    //   clamp party size here (not on every keystroke)
-    const partySizeRaw = Number(
-      String(form.partySizeInput || "").replace(/\D/g, ""),
-    );
-    const partySize = clampInt(partySizeRaw || 1, 1, totalLines);
-
-    const reserveAtISO = parseLocalDatetimeToISO(form.reserveAtLocal);
-    if (!reserveAtISO) {
-      alert("Pick a valid reservation time.");
-      return;
-    }
-
-    const newEntry = {
-      id: uid(),
-      name,
-      phone, // stored as digits "8015551212" <- Examole
-      partySize,
-      linesUsed: 0,
-      notes,
-      status: "RESERVED",
-      createdAt: new Date().toISOString(),
-      queueOrder: Date.now() + Math.random(),
-      reserveAtISO,
-    };
-
-    setEntries((prev) => ensureQueueOrder([...prev, newEntry]));
-
-    const in20 = new Date(Date.now() + 20 * 60 * 1000);
-    setForm({
-      name: "",
-      phoneDigits: "",
-      partySizeInput: "1",
-      notes: "",
-      reserveAtLocal: toLocalDatetimeValue(in20),
+  function askCancel(r) {
+    setConfirm({
+      type: "CANCEL",
+      reservation: r,
+      title: "Cancel reservation?",
+      message: `Mark ${r.name}'s reservation as cancelled? You can still see it under the CANCELLED filter.`,
+      confirmText: "Cancel reservation",
+      tone: "danger",
     });
   }
 
-  function deleteReservation(id) {
-    const ok = confirm("Delete this reservation?");
-    if (!ok) return;
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-  }
-
-  function checkInNow(id) {
-    setEntries((prev) => {
-      const nowMs = Date.now();
-      const next = prev.map((e) => {
-        if (e.id !== id) return e;
-        return {
-          ...e,
-          status: "WAITING",
-          linesUsed: 0,
-          queueOrder: nowMs - 10_000 + Math.random(),
-        };
-      });
-      return ensureQueueOrder(next);
+  function askDelete(r) {
+    setConfirm({
+      type: "DELETE",
+      reservation: r,
+      title: "Delete reservation?",
+      message: `Permanently delete ${r.name}'s reservation? This cannot be undone.`,
+      confirmText: "Delete forever",
+      tone: "danger",
     });
   }
 
-  function updateReserveTime(id, reserveAtLocal) {
-    const iso = parseLocalDatetimeToISO(reserveAtLocal);
-    if (!iso) return;
-    setEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, reserveAtISO: iso } : e)),
-    );
+  function askCheckIn(r) {
+    const peopleLabel = `${r.party_size} ${r.party_size === 1 ? "person" : "people"}`;
+    setConfirm({
+      type: "CHECKIN",
+      reservation: r,
+      title: "Check in?",
+      message: `Add ${r.name} (${peopleLabel}) to the live waitlist?`,
+      confirmText: "Check in",
+      tone: "primary",
+    });
   }
 
-  const formatWhen = (iso) => {
-    if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  };
+  async function runConfirm() {
+    if (!confirm?.reservation) return;
+    const r = confirm.reservation;
+    const type = confirm.type;
+    setConfirm(null);
+
+    try {
+      if (type === "CANCEL") {
+        const res = await fetch("/api/reservations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id: r.id, status: "CANCELLED" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) throw new Error(data?.error || "Cancel failed");
+      } else if (type === "DELETE") {
+        const res = await fetch(
+          `/api/reservations?id=${encodeURIComponent(r.id)}`,
+          { method: "DELETE", credentials: "include" },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) throw new Error(data?.error || "Delete failed");
+      } else if (type === "CHECKIN") {
+        const createRes = await fetch("/api/state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            op: "CREATE_ENTRY",
+            payload: {
+              name: r.name,
+              party_size: r.party_size,
+              lines_used: r.party_size,
+              phone: r.phone || null,
+              notes: r.notes || null,
+              status: "WAITING",
+            },
+          }),
+        });
+        const createData = await createRes.json().catch(() => ({}));
+        if (!createRes.ok || !createData?.ok) {
+          throw new Error(createData?.error || "Failed to create entry");
+        }
+        const entryId = createData?.entry?.id || null;
+
+        await fetch("/api/reservations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            id: r.id,
+            status: "CHECKED_IN",
+            linked_entry_id: entryId,
+          }),
+        });
+      }
+
+      await load();
+    } catch (e) {
+      alert(e?.message || "Action failed");
+    }
+  }
+
+  const filtered = useMemo(() => {
+    return reservations.filter((r) => {
+      if (filterType !== "ALL" && r.event_type !== filterType) return false;
+      if (!showStatus[r.status]) return false;
+      return true;
+    });
+  }, [reservations, filterType, showStatus]);
+
+  const buckets = useMemo(() => bucketReservations(filtered, now), [filtered, now]);
+  const totalPending = reservations.filter((r) => r.status === "PENDING").length;
 
   return (
     <main className="container">
-      <div className="card spacer-sm reservations-header">
-        <div className="reservations-header__left">
-          <h1 className="title" style={{ marginBottom: 6 }}>
-            Reservations
-          </h1>
-          <p className="muted helper" style={{ margin: 0 }}>
-            Add groups that should be ready at a specific time. They do not
-            consume sling lines until checked in / sent up.
-          </p>
-        </div>
+      {/* Header */}
+      <div className="topbar">
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "center" }}
+        >
+          <div>
+            <h1 style={{ margin: 0 }}>Reservations</h1>
+            <div className="muted" style={{ fontSize: 13 }}>
+              {totalPending} pending · pre-book groups for any date and check
+              them in when they arrive.
+            </div>
+          </div>
 
-        <div className="row">
-          <Link className="button" href="/">
-            ← Back
-          </Link>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <Link className="button" href="/">
+              Bottom
+            </Link>
+            <Link className="button" href="/top">
+              Top
+            </Link>
+          </div>
         </div>
       </div>
 
-      <div className="card spacer-md">
-        <h2 className="section-title" style={{ marginTop: 0 }}>
-          Add reservation
-        </h2>
+      {/* Inline Add form */}
+      <AddReservationForm onCreate={handleCreate} saving={saving} />
 
-        <form className="guest-form spacer-sm" onSubmit={addReservation}>
-          <div className="reservations-grid">
-            <label className="field">
-              <span className="field-label">Name</span>
-              <input
-                className="input"
-                value={form.name}
-                onChange={(e) => updateForm({ name: e.target.value })}
-                placeholder="Last name / group name"
-                autoComplete="off"
-              />
+      {/* Filters */}
+      <section className="card spacer-md" style={{ padding: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <label className="muted" style={{ fontSize: 13 }}>
+              Type:
             </label>
-
-            <label className="field">
-              <span className="field-label">Phone</span>
-              <input
-                className="input"
-                value={formatPhone(form.phoneDigits)}
-                onChange={(e) =>
-                  updateForm({
-                    phoneDigits: digitsOnlyMax(
-                      e.target.value,
-                      LIMITS.entryPhone,
-                    ),
-                  })
-                }
-                placeholder="(801) 555-1212"
-                inputMode="tel"
-                autoComplete="off"
-                required
-              />
-              <span className="muted helper reservations-mini">
-                Required • stored as digits
-              </span>
-            </label>
-
-            <label className="field">
-              <span className="field-label">Group size</span>
-              <input
-                className="input"
-                value={form.partySizeInput}
-                onChange={(e) => {
-                  const digits = String(e.target.value || "")
-                    .replace(/\D/g, "")
-                    .slice(0, 2); // 1–15 max anyway
-                  updateForm({ partySizeInput: digits });
-                }}
-                onBlur={() => {
-                  // snap empty -> "1" on blur so it looks clean
-                  const raw = Number(
-                    String(form.partySizeInput || "").replace(/\D/g, ""),
-                  );
-                  const n = clampInt(raw || 1, 1, totalLines);
-                  updateForm({ partySizeInput: String(n) });
-                }}
-                inputMode="numeric"
-                autoComplete="off"
-              />
-            </label>
-
-            <label className="field">
-              <span className="field-label">Ready at</span>
-              <input
-                className="input"
-                type="datetime-local"
-                value={form.reserveAtLocal}
-                onChange={(e) => updateForm({ reserveAtLocal: e.target.value })}
-              />
-              <span className="muted helper reservations-mini">
-                Now:{" "}
-                {now.toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </span>
-            </label>
-          </div>
-
-          <label className="field">
-            <span className="field-label">Notes</span>
-            <textarea
+            <select
               className="input"
-              value={form.notes}
-              onChange={(e) => updateForm({ notes: e.target.value })}
-              placeholder="Any details for staff..."
-              rows={3}
-            />
-          </label>
-
-          <div className="row spacer-sm">
-            <button className="button button-primary" type="submit">
-              Add reservation
-            </button>
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              style={{ width: "auto", padding: "6px 10px" }}
+            >
+              <option value="ALL">All types</option>
+              {EVENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </div>
-        </form>
-      </div>
 
-      <div className="card spacer-md">
-        <div className="reservations-section-title">
-          <h2 className="section-title" style={{ margin: 0 }}>
-            Ready now
-          </h2>
-          <span className="reservations-badge">{dueNow.length}</span>
-        </div>
-
-        {dueNow.length === 0 ? (
-          <p className="muted helper">No reservations are due right now.</p>
-        ) : (
-          <div className="reservations-list">
-            {dueNow.map((e) => (
-              <div className="reservations-row" key={e.id}>
-                <div className="reservations-main">
-                  <div className="reservations-name">
-                    {e.name}{" "}
-                    <span className="muted">
-                      • {Math.max(1, Number(e.partySize || 1))}
-                    </span>
-                  </div>
-                  <div className="muted helper reservations-sub">
-                    Ready at {formatWhen(e.reserveAtISO)} •{" "}
-                    {formatPhone(e.phone)}
-                    {e.notes ? ` • ${e.notes}` : ""}
-                  </div>
-                </div>
-
-                <div className="reservations-actions">
-                  <button
-                    className="button button-primary"
-                    type="button"
-                    onClick={() => checkInNow(e.id)}
-                    title="Move into the waiting list at the front"
-                  >
-                    Check in
-                  </button>
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => deleteReservation(e.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <span className="muted" style={{ fontSize: 13 }}>
+              Show:
+            </span>
+            {Object.keys(showStatus).map((s) => (
+              <label
+                key={s}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showStatus[s]}
+                  onChange={(e) =>
+                    setShowStatus((p) => ({ ...p, [s]: e.target.checked }))
+                  }
+                />
+                {s.replace("_", " ")}
+              </label>
             ))}
           </div>
-        )}
-      </div>
-
-      <div className="card spacer-md">
-        <div className="reservations-section-title">
-          <h2 className="section-title" style={{ margin: 0 }}>
-            Upcoming
-          </h2>
-          <span className="reservations-badge">{upcoming.length}</span>
         </div>
+      </section>
 
-        {upcoming.length === 0 ? (
-          <p className="muted helper">No upcoming reservations.</p>
-        ) : (
-          <div className="reservations-list">
-            {upcoming.map((e) => {
-              const localValue = e.reserveAtISO
-                ? toLocalDatetimeValue(new Date(e.reserveAtISO))
-                : "";
+      {/* Loading / Error / Lists */}
+      {loading ? (
+        <div
+          className="card spacer-md"
+          style={{ padding: 20, textAlign: "center" }}
+        >
+          <div className="muted">Loading reservations…</div>
+        </div>
+      ) : err ? (
+        <div
+          className="card spacer-md"
+          style={{
+            padding: 14,
+            background: "var(--danger-bg)",
+            color: "var(--danger)",
+          }}
+        >
+          {err}
+        </div>
+      ) : (
+        <>
+          <Section
+            title="Today"
+            count={buckets.today.length}
+            accentColor="var(--color-primary)"
+          >
+            {buckets.today.length === 0 ? (
+              <div className="muted" style={{ padding: 12, fontSize: 13 }}>
+                No reservations for today.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {buckets.today.map((r) => (
+                  <ReservationCard
+                    key={r.id}
+                    r={r}
+                    onCheckIn={askCheckIn}
+                    onCancel={askCancel}
+                    onDelete={askDelete}
+                    onEdit={setEditTarget}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
 
-              return (
-                <div className="reservations-row" key={e.id}>
-                  <div className="reservations-main">
-                    <div className="reservations-name">
-                      {e.name}{" "}
-                      <span className="muted">
-                        • {Math.max(1, Number(e.partySize || 1))}
-                      </span>
-                    </div>
+          <Section title="This week" count={buckets.thisWeek.length}>
+            {buckets.thisWeek.length === 0 ? (
+              <div className="muted" style={{ padding: 12, fontSize: 13 }}>
+                No upcoming reservations in the next 7 days.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {buckets.thisWeek.map((r) => (
+                  <ReservationCard
+                    key={r.id}
+                    r={r}
+                    onCheckIn={askCheckIn}
+                    onCancel={askCancel}
+                    onDelete={askDelete}
+                    onEdit={setEditTarget}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
 
-                    <div className="reservations-inline">
-                      <span className="muted helper">Ready at</span>
-                      <input
-                        className="input reservations-dt"
-                        type="datetime-local"
-                        value={localValue}
-                        onChange={(ev) =>
-                          updateReserveTime(e.id, ev.target.value)
-                        }
-                      />
-                      <span className="muted helper reservations-when">
-                        ({formatWhen(e.reserveAtISO)})
-                      </span>
-                    </div>
+          <Section title="Future" count={buckets.future.length}>
+            {buckets.future.length === 0 ? (
+              <div className="muted" style={{ padding: 12, fontSize: 13 }}>
+                No future reservations.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {buckets.future.map((r) => (
+                  <ReservationCard
+                    key={r.id}
+                    r={r}
+                    onCheckIn={askCheckIn}
+                    onCancel={askCancel}
+                    onDelete={askDelete}
+                    onEdit={setEditTarget}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
 
-                    <div className="muted helper reservations-sub">
-                      {formatPhone(e.phone)}
-                      {e.notes ? ` • ${e.notes}` : ""}
-                    </div>
-                  </div>
+          {buckets.past.length > 0 ? (
+            <Section
+              title="Past"
+              count={buckets.past.length}
+              accentColor="var(--color-muted)"
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {buckets.past.map((r) => (
+                  <ReservationCard
+                    key={r.id}
+                    r={r}
+                    onCheckIn={askCheckIn}
+                    onCancel={askCancel}
+                    onDelete={askDelete}
+                    onEdit={setEditTarget}
+                  />
+                ))}
+              </div>
+            </Section>
+          ) : null}
+        </>
+      )}
 
-                  <div className="reservations-actions">
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={() => deleteReservation(e.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* Edit modal */}
+      <EditReservationModal
+        reservation={editTarget}
+        saving={saving}
+        onSave={handleUpdate}
+        onClose={() => setEditTarget(null)}
+      />
 
-      <p className="muted helper" style={{ marginTop: 12 }}>
-        Tip: When the “ready at” time arrives, your Home page effect will
-        automatically move those reservations into the waiting list.
-      </p>
+      {/* Confirm modal */}
+      <ConfirmModal
+        open={Boolean(confirm)}
+        title={confirm?.title || "Confirm"}
+        message={confirm?.message}
+        confirmText={confirm?.confirmText || "Confirm"}
+        tone={confirm?.tone || "danger"}
+        onClose={() => setConfirm(null)}
+        onConfirm={runConfirm}
+      />
     </main>
   );
 }
