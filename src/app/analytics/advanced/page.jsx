@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import ArchiveModal from "@/app/components/ropes/ArchiveModal";
 
 const ANALYTICS_TZ = "America/Denver";
 
@@ -78,6 +79,75 @@ export default function AdvancedSearchPage() {
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // Flag & archive modal state for past (finished) groups
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveEntry, setArchiveEntry] = useState(null);
+  const [archivedIds, setArchivedIds] = useState(() => new Set());
+
+  function openArchive(row) {
+    setArchiveEntry({
+      id: String(row.id),
+      name: row.name || "",
+      phone: row.phone || "",
+      partySize: Math.max(1, Number(row.party_size || 1)),
+      notes: row.notes || "",
+      assignedTag: row.assigned_tag || null,
+      status: row.status || "",
+      createdAt: row.created_at || null,
+      sentUpAt: row.sent_up_at || null,
+      startedAt: row.start_time || row.started_at || null,
+      finishedAt: row.finished_at || null,
+      mergeHistory: Array.isArray(row.merge_history) ? row.merge_history : null,
+    });
+    setArchiveOpen(true);
+  }
+
+  function closeArchive() {
+    setArchiveOpen(false);
+    setArchiveEntry(null);
+  }
+
+  async function handleArchiveSubmit({ reason, note }) {
+    if (!archiveEntry?.id) return;
+    const r = String(reason || "").trim();
+    const n = String(note || "").trim();
+    const combined = n ? `${r} • Note: ${n}` : r;
+
+    const payload = {
+      archivedBy: "top",
+      reason: combined,
+      entrySnapshot: {
+        id: archiveEntry.id,
+        name: archiveEntry.name,
+        phone: archiveEntry.phone,
+        partySize: archiveEntry.partySize,
+        notes: archiveEntry.notes,
+        status: archiveEntry.status,
+        createdAt: archiveEntry.createdAt,
+        sentUpAt: archiveEntry.sentUpAt,
+        startedAt: archiveEntry.startedAt,
+        finishedAt: archiveEntry.finishedAt,
+        assignedTag: archiveEntry.assignedTag,
+        mergeHistory: archiveEntry.mergeHistory,
+      },
+      guestNotes: [],
+    };
+
+    const res = await fetch("/api/archive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Archive failed");
+
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.add(archiveEntry.id);
+      return next;
+    });
+  }
 
   async function search(e) {
     e?.preventDefault();
@@ -433,17 +503,39 @@ export default function AdvancedSearchPage() {
                     )}
                   </div>
 
-                  {/* Right side: status */}
+                  {/* Right side: status + flag action */}
                   <div
-                    className="muted"
-                    style={{ fontSize: 12, textAlign: "right", whiteSpace: "nowrap" }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 8,
+                      whiteSpace: "nowrap",
+                    }}
                   >
-                    {r.status}
-                    {r.finish_reason && (
-                      <div style={{ fontSize: 11, marginTop: 2 }}>
-                        {r.finish_reason}
-                      </div>
-                    )}
+                    <div
+                      className="muted"
+                      style={{ fontSize: 12, textAlign: "right" }}
+                    >
+                      {r.status}
+                      {r.finish_reason && (
+                        <div style={{ fontSize: 11, marginTop: 2 }}>
+                          {r.finish_reason}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="button"
+                      style={{ fontSize: 12, padding: "6px 10px" }}
+                      onClick={() => openArchive(r)}
+                      disabled={archivedIds.has(String(r.id))}
+                      title="Flag & archive this past group"
+                    >
+                      {archivedIds.has(String(r.id))
+                        ? "Archived"
+                        : "Flag & Archive"}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -451,6 +543,14 @@ export default function AdvancedSearchPage() {
           )}
         </div>
       )}
+
+      <ArchiveModal
+        open={archiveOpen}
+        entry={archiveEntry}
+        showModeSelector={false}
+        onClose={closeArchive}
+        onSubmit={handleArchiveSubmit}
+      />
     </div>
   );
 }

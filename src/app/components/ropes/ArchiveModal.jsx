@@ -8,6 +8,7 @@ export default function ArchiveModal({
   initialReason = "",
   initialNote = "",
   initialMode = "REMOVE", // "REMOVE" | "KEEP"
+  showModeSelector = true,
   onClose,
   onSubmit, // can be async now
 }) {
@@ -171,27 +172,29 @@ export default function ArchiveModal({
             />
           </label>
 
-          <label className="field">
-            <span className="field-label">Action</span>
-            <select
-              className="input"
-              value={drafts.mode}
-              disabled={saving}
-              onChange={(e) =>
-                setDrafts((d) => ({ ...d, mode: e.target.value }))
-              }
-              style={{ padding: 10 }}
-            >
-              <option value="REMOVE">Archive + remove from active lists</option>
-              <option value="KEEP">
-                Archive but keep them visible/on course
-              </option>
-            </select>
-            <div className="muted helper" style={{ marginTop: 6 }}>
-              “Keep” is useful if you still need to run their timer but want the
-              record saved.
-            </div>
-          </label>
+          {showModeSelector && (
+            <label className="field">
+              <span className="field-label">Action</span>
+              <select
+                className="input"
+                value={drafts.mode}
+                disabled={saving}
+                onChange={(e) =>
+                  setDrafts((d) => ({ ...d, mode: e.target.value }))
+                }
+                style={{ padding: 10 }}
+              >
+                <option value="REMOVE">Archive + remove from active lists</option>
+                <option value="KEEP">
+                  Archive but keep them visible/on course
+                </option>
+              </select>
+              <div className="muted helper" style={{ marginTop: 6 }}>
+                “Keep” is useful if you still need to run their timer but want the
+                record saved.
+              </div>
+            </label>
+          )}
 
           <div
             className="row"
