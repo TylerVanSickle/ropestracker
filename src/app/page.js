@@ -1081,108 +1081,119 @@ export default function Home() {
   }
 
   // IMPORTANT: compute swap from the latest entries (via ref) to avoid “sometimes works”
-  async function moveWaiting(id, direction) {
-    const targetId = String(id);
+async function moveWaiting(id, direction) {
+  const targetId = String(id);
 
-    const current = Array.isArray(entriesRef.current) ? entriesRef.current : [];
+  const current = Array.isArray(entriesRef.current) ? entriesRef.current : [];
 
-    const waitingNow = current
-      .filter((e) => String(e.status || "").toUpperCase() === "WAITING")
-      .slice()
-      .sort((a, b) => Number(a.queueOrder ?? 0) - Number(b.queueOrder ?? 0));
+  const waitingNow = current
+    .filter((e) => String(e.status || "").toUpperCase() === "WAITING")
+    .slice()
+    .sort((a, b) => {
+      const ao = Number(a.queueOrder);
+      const bo = Number(b.queueOrder);
 
-    const idx = waitingNow.findIndex((e) => String(e.id) === targetId);
-    if (idx < 0) return;
+      if (!Number.isFinite(ao)) return 1;
+      if (!Number.isFinite(bo)) return -1;
 
-    const swapIdx = direction === "UP" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= waitingNow.length) return;
-
-    const a = waitingNow[idx];
-    const b = waitingNow[swapIdx];
-
-    const aOrder = Number(a.queueOrder);
-    const bOrder = Number(b.queueOrder);
-
-    if (
-      !Number.isFinite(aOrder) ||
-      !Number.isFinite(bOrder) ||
-      aOrder <= 0 ||
-      bOrder <= 0
-    ) {
-      // normalize locally then let them click again (prevents 0/0 no-op swaps)
-      setEntries((prev) => {
-        /* undo now handled via useUndoHistory */
-        return ensureQueueOrderList(prev);
-      });
-      fireToast("Order normalized — try again", "info");
-      return;
-    }
-
-    const swappedA = { id: a.id, queueOrder: bOrder };
-    const swappedB = { id: b.id, queueOrder: aOrder };
-
-    // optimistic local swap
-    setEntries((prev) => {
-      /* undo now handled via useUndoHistory */
-      const next = prev.map((e) => {
-        const eid = String(e.id);
-        if (eid === String(swappedA.id))
-          return { ...e, queueOrder: swappedA.queueOrder };
-        if (eid === String(swappedB.id))
-          return { ...e, queueOrder: swappedB.queueOrder };
-        return e;
-      });
-      return ensureQueueOrderList(next);
+      return ao - bo;
     });
 
-    try {
-      await Promise.all([
-        statePut({
-          op: "PATCH_ENTRY",
-          payload: {
-            id: swappedA.id,
-            patch: toDbPatchFromUi({ queueOrder: swappedA.queueOrder }),
-          },
-        }),
-        statePut({
-          op: "PATCH_ENTRY",
-          payload: {
-            id: swappedB.id,
-            patch: toDbPatchFromUi({ queueOrder: swappedB.queueOrder }),
-          },
-        }),
-      ]);
-      setRemoteOnline(true);
+  const idx = waitingNow.findIndex((e) => String(e.id) === targetId);
+  if (idx < 0) return;
 
-      undoHistory.pushAction({
-        type: "REORDER",
-        description: `Moved ${a.name || "group"} ${direction === "UP" ? "up" : "down"}`,
-        reverse: async () => {
-          await Promise.all([
-            statePut({
-              op: "PATCH_ENTRY",
-              payload: {
-                id: a.id,
-                patch: toDbPatchFromUi({ queueOrder: aOrder }),
-              },
-            }),
-            statePut({
-              op: "PATCH_ENTRY",
-              payload: {
-                id: b.id,
-                patch: toDbPatchFromUi({ queueOrder: bOrder }),
-              },
-            }),
-          ]);
-          refreshFromServer();
-        },
-      });
-    } catch (err) {
-      console.error("PATCH_ENTRY (moveWaiting) failed:", err);
-      setRemoteOnline(false);
-      fireToast("Reordered locally — couldn’t sync", "warning");
-    }
+  const swapIdx = direction === "UP" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= waitingNow.length) return;
+
+  const a = waitingNow[idx];
+  const b = waitingNow[swapIdx];
+
+  const aOrder = Number(a.queueOrder);
+  const bOrder = Number(b.queueOrder);
+
+  if (
+    !Number.isFinite(aOrder) ||
+    !Number.isFinite(bOrder) ||
+    aOrder <= 0 ||
+    bOrder <= 0
+  ) {
+    setEntries((prev) => ensureQueueOrderList(prev));
+    fireToast("Order normalized — try again", "info");
+    return;
   }
+
+  const swappedA = { id: a.id, queueOrder: bOrder };
+  const swappedB = { id: b.id, queueOrder: aOrder };
+
+  // optimistic local swap
+  setEntries((prev) => {
+    return prev.map((e) => {
+      const eid = String(e.id);
+
+      if (eid === String(swappedA.id)) {
+        return { ...e, queueOrder: swappedA.queueOrder };
+      }
+
+      if (eid === String(swappedB.id)) {
+        return { ...e, queueOrder: swappedB.queueOrder };
+      }
+
+      return e;
+    });
+  });
+
+  try {
+    await Promise.all([
+      statePut({
+        op: "PATCH_ENTRY",
+        payload: {
+          id: swappedA.id,
+          patch: toDbPatchFromUi({ queueOrder: swappedA.queueOrder }),
+        },
+      }),
+      statePut({
+        op: "PATCH_ENTRY",
+        payload: {
+          id: swappedB.id,
+          patch: toDbPatchFromUi({ queueOrder: swappedB.queueOrder }),
+        },
+      }),
+    ]);
+
+    setRemoteOnline(true);
+
+    undoHistory.pushAction({
+      type: "REORDER",
+      description: `Moved ${a.name || "group"} ${
+        direction === "UP" ? "up" : "down"
+      }`,
+      reverse: async () => {
+        await Promise.all([
+          statePut({
+            op: "PATCH_ENTRY",
+            payload: {
+              id: a.id,
+              patch: toDbPatchFromUi({ queueOrder: aOrder }),
+            },
+          }),
+          statePut({
+            op: "PATCH_ENTRY",
+            payload: {
+              id: b.id,
+              patch: toDbPatchFromUi({ queueOrder: bOrder }),
+            },
+          }),
+        ]);
+
+        refreshFromServer();
+      },
+    });
+  } catch (err) {
+    console.error("PATCH_ENTRY (moveWaiting) failed:", err);
+    setRemoteOnline(false);
+    fireToast("Reordered locally — couldn’t sync", "warning");
+  }
+}
 
   // Notify expiry — after 5 min with no response, move group down one spot
   useEffect(() => {
