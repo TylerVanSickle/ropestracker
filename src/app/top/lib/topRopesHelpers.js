@@ -47,15 +47,12 @@ export function getDerived(entriesRaw, settings) {
   });
 
   const totalLines = Math.max(0, Number(settings?.totalLines ?? 0));
-  const now = Date.now();
 
   let used = 0;
+
   for (const e of up) {
     const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
-    const end = e.endTime ? new Date(e.endTime).getTime() : NaN;
-
-    if (Number.isFinite(end) && end > now) used += needs;
-    if (!Number.isFinite(end)) used += needs;
+    used += needs;
   }
 
   const availableLines = Math.max(0, totalLines - used);
