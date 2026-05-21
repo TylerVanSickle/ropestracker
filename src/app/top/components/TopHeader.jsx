@@ -55,10 +55,7 @@ export default function TopHeader({
         </div>
 
         {/* RIGHT: Status cards */}
-        <div
-          className="card topbarStatus"
-          style={{ padding: 12 }}
-        >
+        <div className="card topbarStatus" style={{ padding: 12 }}>
           <div className="item" style={{ padding: 10 }}>
             <div className="muted" style={{ fontSize: 13 }}>
               Status
@@ -83,10 +80,7 @@ export default function TopHeader({
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {sentCount}{" "}
-              <span
-                className="muted"
-                style={{ fontSize: 12, fontWeight: 500 }}
-              >
+              <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>
                 · {sentPeople}p
               </span>
             </div>
@@ -98,10 +92,7 @@ export default function TopHeader({
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {courseCount}{" "}
-              <span
-                className="muted"
-                style={{ fontSize: 12, fontWeight: 500 }}
-              >
+              <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>
                 · {coursePeople}p
               </span>
             </div>
@@ -113,10 +104,7 @@ export default function TopHeader({
             </div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>
               {waitingCount}{" "}
-              <span
-                className="muted"
-                style={{ fontSize: 12, fontWeight: 500 }}
-              >
+              <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>
                 · {waitingPeople}p
               </span>
             </div>

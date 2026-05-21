@@ -47,16 +47,15 @@ export function getDerived(entriesRaw, settings) {
   });
 
   const totalLines = Math.max(0, Number(settings?.totalLines ?? 0));
-  const now = Date.now();
 
-let used = 0;
+  let used = 0;
 
-for (const e of up) {
-  const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
-  used += needs;
-}
+  for (const e of up) {
+    const needs = Math.max(1, Number(e.linesUsed ?? e.partySize ?? 1));
+    used += needs;
+  }
 
-const availableLines = Math.max(0, totalLines - used);
+  const availableLines = Math.max(0, totalLines - used);
 
   const sentUp = up
     .filter((e) => String(e.coursePhase || "").toUpperCase() === "SENT")
